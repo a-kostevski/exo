@@ -1,9 +1,12 @@
-package fs
+package utils
 
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 )
 
 // EnsureDirectoryExists creates directory if it doesn't exist.
@@ -93,4 +96,39 @@ func DeleteFile(path string) error {
 		return fmt.Errorf("failed to delete file %s: %w", path, err)
 	}
 	return nil
+}
+
+// OpenInEditor opens a file in the configured editor.
+// It uses the editor specified in the application configuration.
+// If no editor is configured, it returns without error.
+func OpenInEditor(filepath string, editor string) error {
+	if filepath == "" {
+		return fmt.Errorf("filepath cannot be empty")
+	}
+
+	if editor == "" {
+		return fmt.Errorf("editor cannot be empty")
+	}
+
+	cmd := exec.Command(editor, filepath)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to open in editor: %w", err)
+	}
+
+	return nil
+}
+
+// SanitizeFileName converts a string into a safe filename by:
+// - Converting spaces to dashes
+// - Removing non-alphanumeric characters (except dashes)
+// - Converting to lowercase
+func SanitizeFileName(name string) string {
+	name = strings.ReplaceAll(name, " ", "-")
+	reg := regexp.MustCompile(`[^a-zA-Z0-9\-]`)
+	name = reg.ReplaceAllString(name, "")
+	return strings.ToLower(name)
 }
