@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/a-kostevski/exo/internal/fs"
 	"github.com/a-kostevski/exo/internal/logger"
+	"github.com/a-kostevski/exo/internal/utils"
 	"github.com/spf13/viper"
 )
 
@@ -78,6 +78,7 @@ type Config struct {
 	ZettelDir   string `mapstructure:"zettel_dir"`
 	ProjectsDir string `mapstructure:"projects_dir"`
 	InboxDir    string `mapstructure:"inbox_dir"`
+	IdeaDir     string `mapstructure:"idea_dir"`
 
 	// Logging configuration
 	Log logger.Config `mapstructure:"log"`
@@ -230,10 +231,10 @@ func load(cfgFile string) (*Config, error) {
 	logger.Debug("Successfully unmarshaled config")
 
 	// Expand tildes in paths
-	cfg.DataHome = fs.ExpandPath(cfg.DataHome)
-	cfg.TemplateDir = fs.ExpandPath(cfg.TemplateDir)
-	cfg.PeriodicDir = fs.ExpandPath(cfg.PeriodicDir)
-	cfg.ZettelDir = fs.ExpandPath(cfg.ZettelDir)
+	cfg.DataHome = utils.ExpandPath(cfg.DataHome)
+	cfg.TemplateDir = utils.ExpandPath(cfg.TemplateDir)
+	cfg.PeriodicDir = utils.ExpandPath(cfg.PeriodicDir)
+	cfg.ZettelDir = utils.ExpandPath(cfg.ZettelDir)
 	logger.Debug("Expanded all path variables")
 
 	// Validate config
@@ -246,9 +247,7 @@ func load(cfgFile string) (*Config, error) {
 	return cfg, nil
 }
 
-// getDefaults returns a map of default configuration values
 func getDefaults(dataHome string) map[string]interface{} {
-	// Get cache directory
 	cacheDir := os.Getenv(envXDGCache)
 	if cacheDir == "" {
 		home, err := os.UserHomeDir()

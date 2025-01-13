@@ -2,13 +2,12 @@ package cmd
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/a-kostevski/exo/internal/config"
-	"github.com/a-kostevski/exo/internal/fs"
-	"github.com/a-kostevski/exo/internal/note/factory"
+	"github.com/a-kostevski/exo/internal/note"
+	"github.com/a-kostevski/exo/internal/note/builtin"
 	"github.com/a-kostevski/exo/internal/templates"
 )
 
@@ -25,10 +24,8 @@ var zetCmd = &cobra.Command{
 			return fmt.Errorf("failed to create template manager: %w", err)
 		}
 
-		f := factory.New(tm)
-
 		// Create Zettel note
-		note, err := f.CreateZettel(title)
+		note, err := builtin.NewZettelNote(title, tm)
 		if err != nil {
 			return fmt.Errorf("failed to create zettel note: %w", err)
 		}
@@ -37,21 +34,14 @@ var zetCmd = &cobra.Command{
 			return fmt.Errorf("failed to save note: %w", err)
 		}
 
-		// Create/get today's daily note
-		dailyNote, err := f.CreateDaily(time.Now())
+		dailyNote, err := builtin.GetOrCreateTodayNote(tm)
 		if err != nil {
-			return fmt.Errorf("failed to create/get daily note: %w", err)
+			return fmt.Errorf("failed to get/create daily note: %w", err)
 		}
 
-		if err := dailyNote.Save(); err != nil {
-			return fmt.Errorf("failed to save daily note: %w", err)
-		}
-
-		// Append Zettel link to daily note
-		zettelLink := fmt.Sprintf("- [[%s]]", note.Title())
-
-		if err := fs.AppendToFile(dailyNote.Path(), zettelLink); err != nil {
-			return fmt.Errorf("failed to append link to daily note: %w", err)
+		// Append Zettel reference to daily note
+		if err := appendZettelReference(dailyNote, note); err != nil {
+			return fmt.Errorf("failed to update daily note: %w", err)
 		}
 
 		if err := note.Open(); err != nil {
@@ -60,6 +50,19 @@ var zetCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func appendZettelReference(daily *builtin.DailyNote, zettel note.Note) error {
+	zettelLink := fmt.Sprintf("\n- [[%s]]", zettel.Title())
+
+	content := daily.Content()
+	content += zettelLink
+
+	if err := daily.SetContent(content); err != nil {
+		return fmt.Errorf("failed to update daily note content: %w", err)
+	}
+
+	return daily.Save()
 }
 
 func init() {

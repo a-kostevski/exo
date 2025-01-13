@@ -23,13 +23,7 @@ func EnsureDirectoryExists(path string) error {
 // It returns true if the file exists and is accessible.
 func FileExists(path string) bool {
 	_, err := os.Stat(path)
-	if err == nil {
-		return true
-	}
-	if os.IsNotExist(err) {
-		return false
-	}
-	return false
+	return err == nil || os.IsExist(err)
 }
 
 // CreateFile creates a new empty file at the specified path.
@@ -43,7 +37,7 @@ func CreateFile(path string) error {
 
 	f, err := os.Create(path)
 	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
+		return err
 	}
 	return f.Close()
 }

@@ -2,12 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/a-kostevski/exo/internal/config"
-	"github.com/a-kostevski/exo/internal/note/factory"
+	"github.com/a-kostevski/exo/internal/note/builtin"
 	"github.com/a-kostevski/exo/internal/templates"
 )
 
@@ -21,8 +20,7 @@ var dayCmd = &cobra.Command{
 			return fmt.Errorf("failed to create template manager: %w", err)
 		}
 
-		f := factory.New(tm)
-		note, err := f.CreateDaily(time.Now())
+		note, err := builtin.GetOrCreateTodayNote(tm)
 		if err != nil {
 			return fmt.Errorf("failed to create daily note: %w", err)
 		}
