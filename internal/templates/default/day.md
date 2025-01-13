@@ -40,9 +40,8 @@
 
 ### Physical Health
 
-- Exercise: [ ] Run [ ] Gym [ ] Yoga [ ] Other: **\_**
+- Exercise: [ ] Run [ ] Gym [ ]  Other: **\_**
 - Alcohol: [ ] Yes [ ] No
-- Sleep hours: \_\_\_
 - Energy Level (1-5): \_\_\_
 
 ### Mental Health
