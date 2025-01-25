@@ -1,9 +1,4 @@
-package builtin
-
-import (
-	"github.com/a-kostevski/exo/internal/note"
-	"github.com/a-kostevski/exo/internal/templates"
-)
+package note
 
 type IdeaStatus string
 
@@ -15,20 +10,32 @@ const (
 )
 
 type IdeaNote struct {
-	*note.BaseNote
+	*BaseNote
 	status   IdeaStatus
 	tags     []string
 	category string
 }
 
-func NewIdeaNote(title string, tm templates.TemplateManager) (*IdeaNote, error) {
-	base, err := note.NewBaseNote(title, tm)
+func NewIdeaNote(title string, opts ...NoteOption) (*IdeaNote, error) {
+	// Create base note with options
+	baseNote, err := NewBaseNote(title, opts...)
 	if err != nil {
 		return nil, err
 	}
 
+	// idea, err := noteService.CreateNote("idea", title,
+	// 	note.WithTemplateName("idea"),
+	// 	note.WithSubDir(filepath.Join(cfg.Dir.IdeaDir, time.Now().Format("2006/01"))),
+	// 	note.WithFileName(fmt.Sprintf("%s.md", title)),
+	// )
+
+	// Set default template
+	if err := WithTemplateName("idea")(baseNote); err != nil {
+		return nil, err
+	}
+
 	return &IdeaNote{
-		BaseNote: base,
+		BaseNote: baseNote,
 		status:   StatusNew,
 		tags:     []string{},
 	}, nil

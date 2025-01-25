@@ -1,25 +1,21 @@
 package note
 
 import (
+	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
-	"github.com/a-kostevski/exo/internal/templates"
+	"github.com/a-kostevski/exo/internal/logger"
+	"github.com/a-kostevski/exo/internal/utils"
 )
 
 // PeriodType represents the type of periodic note
 type PeriodType string
 
 const (
-	DailyType PeriodType = "daily"
+	Daily PeriodType = "daily"
 )
-
-type Period struct {
-	Type      string
-	Format    string
-	Template  string
-	Navigator PeriodNavigator
-}
 
 // PeriodNavigator defines an interface for calculating previous and next periods
 type PeriodNavigator interface {
@@ -37,19 +33,43 @@ type PeriodicNote struct {
 	navigator  PeriodNavigator
 }
 
+type PeriodicOption func(*PeriodicNote) error
+
 // NewPeriodicNote creates a new periodic note
-func NewPeriodicNote(title string, pType PeriodType, date time.Time, nav PeriodNavigator, tm templates.TemplateManager) (*PeriodicNote, error) {
-	baseNote, err := NewBaseNote(title, tm)
+func NewPeriodicNote(title string, opts ...PeriodicOption) (*PeriodicNote, error) {
+	logger.Debug("Creating new periodic note", logger.Field{Key: "title", Value: title})
+
+	baseNote, err := NewBaseNote(title)
 	if err != nil {
+		logger.Error("Failed to create base note",
+			logger.Field{Key: "error", Value: err},
+			logger.Field{Key: "title", Value: title})
 		return nil, fmt.Errorf("failed to create base note: %w", err)
 	}
 
-	return &PeriodicNote{
+	note := &PeriodicNote{
 		BaseNote:   baseNote,
-		periodType: pType,
-		date:       date,
-		navigator:  nav,
-	}, nil
+		periodType: Daily,
+		date:       time.Now(),
+	}
+
+	// Apply periodic-specific options
+	for _, opt := range opts {
+		if err := opt(note); err != nil {
+			logger.Error("Failed to apply periodic option",
+				logger.Field{Key: "error", Value: err},
+				logger.Field{Key: "title", Value: title})
+			return nil, fmt.Errorf("failed to apply periodic option: %w", err)
+		}
+	}
+
+	if note.navigator == nil {
+		logger.Error("Period navigator is required",
+			logger.Field{Key: "title", Value: title})
+		return nil, fmt.Errorf("period navigator is required")
+	}
+
+	return note, nil
 }
 
 // Previous returns the start time of the previous period
@@ -82,26 +102,139 @@ func (n *PeriodicNote) Date() time.Time {
 	return n.date
 }
 
-// SetTitle sets the title of the note
-func (n *PeriodicNote) SetTitle(title string) error {
-	return fmt.Errorf("cannot change title of periodic note")
-}
-
-func (n *PeriodicNote) SetDate(date time.Time) error {
-	n.date = date
+// In periodic.go
+func (n *PeriodicNote) Validate() error {
+	if err := n.BaseNote.Validate(); err != nil {
+		return err
+	}
+	if n.navigator == nil {
+		return errors.New("navigator is required")
+	}
+	if n.periodType == "" {
+		return errors.New("period type is required")
+	}
 	return nil
 }
 
-func (n *PeriodicNote) SetNavigator(nav PeriodNavigator) error {
-	n.navigator = nav
+func WithPeriodType(pType PeriodType) PeriodicOption {
+	return func(n *PeriodicNote) error {
+		n.periodType = pType
+		return nil
+	}
+}
+
+func WithDate(date time.Time) PeriodicOption {
+	return func(n *PeriodicNote) error {
+		n.date = date
+		return nil
+	}
+}
+
+func WithNavigator(nav PeriodNavigator) PeriodicOption {
+	return func(n *PeriodicNote) error {
+		if nav == nil {
+			return fmt.Errorf("navigator cannot be nil")
+		}
+		n.navigator = nav
+		return nil
+	}
+}
+
+func WithBaseOptions(opts ...NoteOption) PeriodicOption {
+	return func(n *PeriodicNote) error {
+		for _, opt := range opts {
+			if err := opt(n.BaseNote); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func WithPeriodicSubDir(subDir string) PeriodicOption {
+	return func(n *PeriodicNote) error {
+		if subDir == "" {
+			return errors.New("subdir cannot be empty")
+		}
+		// Use WithBaseOptions to set the base note's subDir with the periodic hierarchy
+		return WithBaseOptions(
+			WithSubDir(filepath.Join("periodic", subDir)),
+		)(n)
+	}
+}
+
+// Save saves the periodic note with additional validation and logging
+func (n *PeriodicNote) Save() error {
+	logger.Debug("Saving periodic note",
+		logger.Field{Key: "title", Value: n.Title()},
+		logger.Field{Key: "path", Value: n.Path()},
+		logger.Field{Key: "periodType", Value: n.periodType},
+		logger.Field{Key: "date", Value: n.date.Format("2006-01-02")})
+
+	// Validate before saving
+	if err := n.Validate(); err != nil {
+		logger.Error("Validation failed during save",
+			logger.Field{Key: "error", Value: err},
+			logger.Field{Key: "title", Value: n.Title()},
+			logger.Field{Key: "path", Value: n.Path()})
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Call BaseNote's Save method
+	if err := n.BaseNote.Save(); err != nil {
+		logger.Error("Failed to save periodic note",
+			logger.Field{Key: "error", Value: err},
+			logger.Field{Key: "title", Value: n.Title()},
+			logger.Field{Key: "path", Value: n.Path()})
+		return fmt.Errorf("failed to save note: %w", err)
+	}
+
+	logger.Info("Successfully saved periodic note",
+		logger.Field{Key: "title", Value: n.Title()},
+		logger.Field{Key: "path", Value: n.Path()},
+		logger.Field{Key: "periodType", Value: n.periodType},
+		logger.Field{Key: "date", Value: n.date.Format("2006-01-02")})
 	return nil
 }
 
-func (n *PeriodicNote) SetPeriodType(pType PeriodType) error {
-	n.periodType = pType
-	return nil
-}
+// Load loads the periodic note content with validation and logging
+func (n *PeriodicNote) Load() error {
+	logger.Debug("Loading periodic note",
+		logger.Field{Key: "title", Value: n.Title()},
+		logger.Field{Key: "path", Value: n.Path()},
+		logger.Field{Key: "periodType", Value: n.periodType},
+		logger.Field{Key: "date", Value: n.date.Format("2006-01-02")})
 
-func (n *PeriodicNote) SetTemplateName(name string) error {
-	return n.BaseNote.SetTemplateName(name)
+	// Validate before loading
+	if err := n.Validate(); err != nil {
+		logger.Error("Validation failed during load",
+			logger.Field{Key: "error", Value: err},
+			logger.Field{Key: "title", Value: n.Title()},
+			logger.Field{Key: "path", Value: n.Path()})
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Check if file exists
+	if !utils.FileExists(n.Path()) {
+		logger.Error("Note file does not exist",
+			logger.Field{Key: "title", Value: n.Title()},
+			logger.Field{Key: "path", Value: n.Path()})
+		return fmt.Errorf("note file does not exist: %s", n.Path())
+	}
+
+	// Call BaseNote's Load method
+	if err := n.BaseNote.Load(); err != nil {
+		logger.Error("Failed to load periodic note",
+			logger.Field{Key: "error", Value: err},
+			logger.Field{Key: "title", Value: n.Title()},
+			logger.Field{Key: "path", Value: n.Path()})
+		return fmt.Errorf("failed to load note: %w", err)
+	}
+
+	logger.Info("Successfully loaded periodic note",
+		logger.Field{Key: "title", Value: n.Title()},
+		logger.Field{Key: "path", Value: n.Path()},
+		logger.Field{Key: "periodType", Value: n.periodType},
+		logger.Field{Key: "date", Value: n.date.Format("2006-01-02")})
+	return nil
 }
