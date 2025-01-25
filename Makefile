@@ -1,20 +1,47 @@
-.PHONY: build test clean install
+.PHONY: build test clean lint
 
+# Go parameters
+GOCMD=go
+GOBUILD=$(GOCMD) build
+GOCLEAN=$(GOCMD) clean
+GOTEST=$(GOCMD) test
+GOGET=$(GOCMD) get
+GOMOD=$(GOCMD) mod
 BINARY_NAME=exo
-BUILD_DIR=bin
+BINARY_DIR=bin
 
-build:
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) main.go
+# Build flags
+LDFLAGS=-ldflags "-s -w"
 
-install: build
-	cp $(BUILD_DIR)/$(BINARY_NAME) $(GOPATH)/bin/
+all: test build
+
+build: $(BINARY_DIR)
+	$(GOBUILD) $(LDFLAGS) -o $(BINARY_DIR)/$(BINARY_NAME)
+
+$(BINARY_DIR):
+	mkdir -p $(BINARY_DIR)
 
 test:
-	go test -v ./...
+	$(GOTEST) -v ./...
 
 clean:
-	rm -rf $(BUILD_DIR)
-	go clean
+	$(GOCLEAN)
+	rm -rf $(BINARY_DIR)
+
+lint:
+	golangci-lint run
+
+deps:
+	$(GOMOD) download
+
+tidy:
+	$(GOMOD) tidy
+
+install: build
+	mv $(BINARY_DIR)/$(BINARY_NAME) $(GOPATH)/bin/$(BINARY_NAME)
+
+uninstall:
+	rm -f $(GOPATH)/bin/$(BINARY_NAME)
 
 # Development helpers
 fmt:
@@ -22,8 +49,5 @@ fmt:
 
 vet:
 	go vet ./...
-
-lint:
-	golangci-lint run
 
 check: fmt vet lint test
