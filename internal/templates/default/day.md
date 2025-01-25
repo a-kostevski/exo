@@ -40,14 +40,14 @@
 
 ### Physical Health
 
-- Exercise: [ ] Run [ ] Gym [ ]  Other: **\_**
+- Exercise: [ ] Run [ ] Gym [ ] Other: **\_**
 - Alcohol: [ ] Yes [ ] No
-- Energy Level (1-5): \_\_\_
 
 ### Mental Health
 
 - Focus Score (1-5): \_\_\_
 - Stress Level (1-5): \_\_\_
+- Anxiety Level (1-5): \_\_\_
 - Work-Life Balance (1-5): \_\_\_
 
 ## Quick Wins & Blockers
