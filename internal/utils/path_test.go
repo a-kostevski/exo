@@ -222,3 +222,70 @@ func TestGetXDGDataHome(t *testing.T) {
 		})
 	}
 }
+
+func TestSanitizePath(t *testing.T) {
+	// Save original HOME
+	originalHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", originalHome)
+
+	// Set up a test home directory
+	tmpDir := t.TempDir()
+	require.NoError(t, os.Setenv("HOME", tmpDir))
+
+	tests := []struct {
+		name     string
+		path     string
+		base     string
+		expected string
+	}{
+		{
+			name:     "absolute path",
+			path:     "/absolute/path",
+			base:     tmpDir,
+			expected: "/absolute/path",
+		},
+		{
+			name:     "relative path",
+			path:     "relative/path",
+			base:     tmpDir,
+			expected: filepath.Join(tmpDir, "relative/path"),
+		},
+		{
+			name:     "path with tilde",
+			path:     "~/some/path",
+			base:     tmpDir,
+			expected: filepath.Join(tmpDir, "some/path"),
+		},
+		{
+			name:     "path with dot",
+			path:     "./current/path",
+			base:     tmpDir,
+			expected: filepath.Join(tmpDir, "current/path"),
+		},
+		{
+			name:     "path with parent directory",
+			path:     "../parent/path",
+			base:     tmpDir,
+			expected: filepath.Join(filepath.Dir(tmpDir), "parent/path"),
+		},
+		{
+			name:     "empty path",
+			path:     "",
+			base:     tmpDir,
+			expected: tmpDir,
+		},
+		{
+			name:     "path with multiple slashes",
+			path:     "path//with///slashes",
+			base:     tmpDir,
+			expected: filepath.Join(tmpDir, "path/with/slashes"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SanitizePath(tt.path, tt.base)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}

@@ -61,3 +61,14 @@ func GetXDGCacheHome() string {
 	}
 	return filepath.Join(home, ".cache")
 }
+
+// SanitizePath cleans and normalizes the provided path, expanding any relative paths
+// against the provided base directory (usually home directory)
+func SanitizePath(path, base string) string {
+	expanded := ExpandPath(path)
+	cleaned := filepath.Clean(expanded)
+	if !filepath.IsAbs(cleaned) {
+		cleaned = filepath.Join(base, cleaned)
+	}
+	return cleaned
+}

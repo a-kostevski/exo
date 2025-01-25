@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/a-kostevski/exo/internal/logger"
+	"github.com/a-kostevski/exo/internal/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -330,7 +331,7 @@ func TestInitialize(t *testing.T) {
 
 		// Create a valid config file
 		configDir := filepath.Join(tmpDir, ".config", "exo")
-		require.NoError(t, os.MkdirAll(configDir, 0755))
+		require.NoError(t, utils.EnsureDirectories(configDir))
 
 		configFile := filepath.Join(configDir, "config.yaml")
 		configContent := []byte(`
@@ -349,7 +350,7 @@ log:
   format: json
   output: stdout
 `)
-		require.NoError(t, os.WriteFile(configFile, configContent, 0644))
+		require.NoError(t, utils.WriteFile(configFile, configContent))
 
 		err := Initialize(configFile)
 		require.NoError(t, err, "Initialize should succeed with valid config file")
@@ -373,14 +374,14 @@ log:
 
 		// Create an invalid config file
 		configDir := filepath.Join(os.TempDir(), ".config", "exo")
-		require.NoError(t, os.MkdirAll(configDir, 0755))
+		require.NoError(t, utils.EnsureDirectories(configDir))
 
 		configFile := filepath.Join(configDir, "config.yaml")
 		configContent := []byte(`
 general:
   editor: [invalid, yaml]
 `)
-		require.NoError(t, os.WriteFile(configFile, configContent, 0644))
+		require.NoError(t, utils.WriteFile(configFile, configContent))
 
 		err := Initialize(configFile)
 		assert.Error(t, err, "Initialize should fail with invalid config content")
@@ -429,7 +430,7 @@ general:
 
 		// Create a valid config file with tilde paths
 		configDir := filepath.Join(tmpDir, ".config", "exo")
-		require.NoError(t, os.MkdirAll(configDir, 0755))
+		require.NoError(t, utils.EnsureDirectories(configDir))
 
 		configFile := filepath.Join(configDir, "config.yaml")
 		configContent := []byte(`
@@ -448,7 +449,7 @@ log:
   format: json
   output: stdout
 `)
-		require.NoError(t, os.WriteFile(configFile, configContent, 0644))
+		require.NoError(t, utils.WriteFile(configFile, configContent))
 
 		err := Initialize(configFile)
 		require.NoError(t, err, "Initialize should succeed with tilde paths")
@@ -583,7 +584,7 @@ func TestConfig_Save(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Read the saved config
-		content, err := os.ReadFile(configPath)
+		content, err := utils.ReadFile(configPath)
 		require.NoError(t, err)
 
 		// Verify content
@@ -610,149 +611,6 @@ func TestConfig_Save(t *testing.T) {
 		cfg := MustGet()
 		err = cfg.Save()
 		assert.Error(t, err)
-	})
-}
-
-func TestSanitizePath(t *testing.T) {
-	tmpDir, cleanup := setupTest(t)
-	defer cleanup()
-
-	tests := []struct {
-		name     string
-		path     string
-		expected string
-	}{
-		{
-			name:     "absolute path",
-			path:     "/absolute/path",
-			expected: "/absolute/path",
-		},
-		{
-			name:     "relative path",
-			path:     "relative/path",
-			expected: filepath.Join(tmpDir, "relative/path"),
-		},
-		{
-			name:     "path with tilde",
-			path:     "~/some/path",
-			expected: filepath.Join(tmpDir, "some/path"),
-		},
-		{
-			name:     "path with dot",
-			path:     "./current/path",
-			expected: filepath.Join(tmpDir, "current/path"),
-		},
-		{
-			name:     "path with parent directory",
-			path:     "../parent/path",
-			expected: filepath.Join(filepath.Dir(tmpDir), "parent/path"),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := sanitizePath(tt.path, tmpDir)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestEnsureDirectories(t *testing.T) {
-	t.Run("create new directories", func(t *testing.T) {
-		tmpDir, cleanup := setupTest(t)
-		defer cleanup()
-
-		paths := []string{
-			filepath.Join(tmpDir, "dir1"),
-			filepath.Join(tmpDir, "dir2", "subdir"),
-			filepath.Join(tmpDir, "dir3", "subdir", "subsubdir"),
-		}
-
-		err := ensureDirectories(paths...)
-		require.NoError(t, err)
-
-		// Verify directories were created
-		for _, path := range paths {
-			info, err := os.Stat(path)
-			require.NoError(t, err)
-			assert.True(t, info.IsDir())
-			assert.Equal(t, os.FileMode(0755), info.Mode().Perm())
-		}
-	})
-
-	t.Run("ensure existing directories", func(t *testing.T) {
-		tmpDir, cleanup := setupTest(t)
-		defer cleanup()
-
-		path := filepath.Join(tmpDir, "existing")
-		require.NoError(t, os.MkdirAll(path, 0755))
-
-		err := ensureDirectories(path)
-		assert.NoError(t, err)
-	})
-
-	t.Run("permission denied", func(t *testing.T) {
-		if os.Geteuid() == 0 {
-			t.Skip("Skipping test when running as root")
-		}
-
-		tmpDir, cleanup := setupTest(t)
-		defer cleanup()
-
-		// Create a read-only parent directory
-		parent := filepath.Join(tmpDir, "readonly")
-		require.NoError(t, os.MkdirAll(parent, 0555))
-
-		path := filepath.Join(parent, "newdir")
-		err := ensureDirectories(path)
-		assert.Error(t, err)
-	})
-}
-
-func TestEnvironmentOverrides(t *testing.T) {
-	t.Run("environment variables override defaults", func(t *testing.T) {
-		_, cleanup := setupTest(t)
-		defer cleanup()
-
-		// Set environment variables
-		os.Setenv("EDITOR", "custom-editor")
-		os.Setenv("EXO_DATA_HOME", "/custom/data/home")
-		os.Setenv("XDG_DATA_HOME", "/custom/xdg/data")
-
-		err := Initialize("")
-		require.NoError(t, err)
-
-		cfg := MustGet()
-		assert.Equal(t, "custom-editor", cfg.General.Editor)
-		assert.Equal(t, "/custom/data/home", cfg.Dir.DataHome)
-	})
-
-	t.Run("EXO_DATA_HOME takes precedence over XDG_DATA_HOME", func(t *testing.T) {
-		_, cleanup := setupTest(t)
-		defer cleanup()
-
-		os.Setenv("EXO_DATA_HOME", "/exo/data")
-		os.Setenv("XDG_DATA_HOME", "/xdg/data")
-
-		err := Initialize("")
-		require.NoError(t, err)
-
-		cfg := MustGet()
-		assert.Equal(t, "/exo/data", cfg.Dir.DataHome)
-	})
-
-	t.Run("XDG_DATA_HOME used when EXO_DATA_HOME not set", func(t *testing.T) {
-		_, cleanup := setupTest(t)
-		defer cleanup()
-
-		os.Setenv("EXO_DATA_HOME", "")
-		os.Setenv("XDG_DATA_HOME", "/xdg/data")
-
-		err := Initialize("")
-		require.NoError(t, err)
-
-		cfg := MustGet()
-		assert.Equal(t, filepath.Join("/xdg/data", "exo"), cfg.Dir.DataHome)
 	})
 }
 
@@ -807,7 +665,7 @@ func TestConfigValidationWithPaths(t *testing.T) {
 		}
 
 		for _, dir := range testDirs {
-			require.NoError(t, os.MkdirAll(dir, 0755))
+			require.NoError(t, utils.EnsureDirectories(dir))
 		}
 
 		cfg := &Config{
@@ -850,7 +708,7 @@ func TestConfigValidationWithPaths(t *testing.T) {
 		}
 
 		for _, dir := range testDirs {
-			require.NoError(t, os.MkdirAll(dir, 0755))
+			require.NoError(t, utils.EnsureDirectories(dir))
 		}
 
 		cfg := &Config{

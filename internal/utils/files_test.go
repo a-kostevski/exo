@@ -109,3 +109,98 @@ func TestFileOperations(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func TestEnsureDirectories(t *testing.T) {
+	// Save original HOME
+	originalHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", originalHome)
+
+	// Set up a test home directory
+	tmpDir := t.TempDir()
+	require.NoError(t, os.Setenv("HOME", tmpDir))
+
+	t.Run("create multiple directories", func(t *testing.T) {
+		paths := []string{
+			filepath.Join(tmpDir, "dir1"),
+			filepath.Join(tmpDir, "dir2", "subdir"),
+			filepath.Join(tmpDir, "dir3", "subdir", "subsubdir"),
+		}
+
+		err := EnsureDirectories(paths...)
+		require.NoError(t, err)
+
+		// Verify directories were created
+		for _, path := range paths {
+			info, err := os.Stat(path)
+			require.NoError(t, err)
+			assert.True(t, info.IsDir())
+			assert.Equal(t, os.FileMode(0755), info.Mode().Perm())
+		}
+	})
+
+	t.Run("create directories with tilde paths", func(t *testing.T) {
+		paths := []string{
+			"~/test/dir1",
+			"~/test/dir2/subdir",
+		}
+
+		err := EnsureDirectories(paths...)
+		require.NoError(t, err)
+
+		// Verify directories were created
+		for _, path := range paths {
+			expandedPath := filepath.Join(tmpDir, path[2:]) // Remove ~/ and join with tmpDir
+			info, err := os.Stat(expandedPath)
+			require.NoError(t, err)
+			assert.True(t, info.IsDir())
+			assert.Equal(t, os.FileMode(0755), info.Mode().Perm())
+		}
+	})
+
+	t.Run("create directories with relative paths", func(t *testing.T) {
+		paths := []string{
+			"./test/dir1",
+			"test/dir2/subdir",
+		}
+
+		err := EnsureDirectories(paths...)
+		require.NoError(t, err)
+
+		// Verify directories were created
+		for _, path := range paths {
+			fullPath := filepath.Join(tmpDir, filepath.Clean(path))
+			info, err := os.Stat(fullPath)
+			require.NoError(t, err)
+			assert.True(t, info.IsDir())
+			assert.Equal(t, os.FileMode(0755), info.Mode().Perm())
+		}
+	})
+
+	t.Run("ensure existing directories", func(t *testing.T) {
+		path := filepath.Join(tmpDir, "existing")
+		require.NoError(t, os.MkdirAll(path, 0755))
+
+		err := EnsureDirectories(path)
+		assert.NoError(t, err)
+
+		// Verify directory still exists with correct permissions
+		info, err := os.Stat(path)
+		require.NoError(t, err)
+		assert.True(t, info.IsDir())
+		assert.Equal(t, os.FileMode(0755), info.Mode().Perm())
+	})
+
+	t.Run("permission denied", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("Skipping test when running as root")
+		}
+
+		// Create a read-only parent directory
+		parent := filepath.Join(tmpDir, "readonly")
+		require.NoError(t, os.MkdirAll(parent, 0555))
+
+		path := filepath.Join(parent, "newdir")
+		err := EnsureDirectories(path)
+		assert.Error(t, err)
+	})
+}
