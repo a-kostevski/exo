@@ -1,13 +1,15 @@
 package logger
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sync"
 
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // Field is a key-value pair for structured logging
@@ -16,162 +18,323 @@ type Field struct {
 	Value interface{}
 }
 
-// Logger is a simple logging interface.
+// Level represents the logging level
+type Level string
+
+const (
+	DebugLevel Level = "debug"
+	InfoLevel  Level = "info"
+	WarnLevel  Level = "warn"
+	ErrorLevel Level = "error"
+	FatalLevel Level = "fatal"
+)
+
+// Format represents the log output format
+type Format string
+
+const (
+	JSONFormat Format = "json"
+	TextFormat Format = "text"
+)
+
+// OutputType represents where logs should be written
+type OutputType string
+
+const (
+	StdoutOutput  OutputType = "stdout"
+	StderrOutput  OutputType = "stderr"
+	FileOutput    OutputType = "file"
+	DiscardOutput OutputType = "discard"
+)
+
+// Config holds logger configuration
+type Config struct {
+	Level      Level      `mapstructure:"level"`
+	Format     Format     `mapstructure:"format"`
+	Output     OutputType `mapstructure:"output"`
+	File       string     `mapstructure:"file"`
+	MaxSize    int        `mapstructure:"max_size"`    // Maximum size in megabytes before log rotation
+	MaxBackups int        `mapstructure:"max_backups"` // Maximum number of old log files to retain
+	MaxAge     int        `mapstructure:"max_age"`     // Maximum number of days to retain old log files
+	Compress   bool       `mapstructure:"compress"`    // Compress rotated files
+}
+
+// Logger interface defines logging behavior
 type Logger interface {
 	Debug(msg string, fields ...Field)
 	Info(msg string, fields ...Field)
 	Warn(msg string, fields ...Field)
 	Error(msg string, fields ...Field)
+	Fatal(msg string, fields ...Field)
+
+	Debugf(format string, args ...interface{})
+	Infof(format string, args ...interface{})
+	Warnf(format string, args ...interface{})
+	Errorf(format string, args ...interface{})
+	Fatalf(format string, args ...interface{})
+
+	With(fields ...Field) Logger
+	WithContext(ctx context.Context) Logger
+}
+
+type zapLogger struct {
+	logger *zap.Logger
+	ctx    context.Context
 }
 
 var (
-	// defaultLogger is the default logger instance
-	defaultLogger     *logrus.Logger
-	defaultLoggerOnce sync.Once
+	defaultLogger Logger
+	once          sync.Once
+	mu            sync.RWMutex
 )
-
-// Config holds the logger configuration
-type Config struct {
-	// Level is the logging level (debug, info, warn, error)
-	Level string
-	// Format is the output format (text, json)
-	Format string
-	// Output is where the logs will be written to
-	Output string
-	// File is the log file path (if Output is "file")
-	File string
-}
 
 // Initialize sets up the logger with the given configuration
 func Initialize(cfg Config) error {
-	defaultLoggerOnce.Do(func() {
-		defaultLogger = logrus.New()
+	var err error
+	once.Do(func() {
+		defaultLogger, err = NewLogger(cfg)
 	})
+	return err
+}
 
-	// Set logging level
-	level, err := logrus.ParseLevel(cfg.Level)
+// Reinitialize allows changing the logger configuration after initialization
+func Reinitialize(cfg Config) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	logger, err := NewLogger(cfg)
 	if err != nil {
-		level = logrus.InfoLevel
-	}
-	defaultLogger.SetLevel(level)
-
-	// Set output format
-	switch cfg.Format {
-	case "json":
-		defaultLogger.SetFormatter(&logrus.JSONFormatter{
-			TimestampFormat: "2006-01-02 15:04:05",
-		})
-	default:
-		defaultLogger.SetFormatter(&logrus.TextFormatter{
-			FullTimestamp:   true,
-			TimestampFormat: "2006-01-02 15:04:05",
-		})
+		return fmt.Errorf("failed to create new logger: %w", err)
 	}
 
-	// Set output destination
+	// If the previous logger was using a file, close it
+	if l, ok := defaultLogger.(*zapLogger); ok && l != nil {
+		_ = l.logger.Sync()
+	}
+
+	defaultLogger = logger
+	once = sync.Once{}
+	return nil
+}
+
+// NewLogger creates a new logger instance
+func NewLogger(cfg Config) (Logger, error) {
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
+
+	zapCfg := zap.NewProductionConfig()
+	zapCfg.Level = getZapLevel(cfg.Level)
+	zapCfg.Encoding = string(cfg.Format)
+
+	// Configure output
+	var output zapcore.WriteSyncer
 	switch cfg.Output {
-	case "file":
-		if cfg.File != "" {
-			fileWriter, err := setupFileOutput(cfg.File)
-			if err != nil {
-				return fmt.Errorf("failed to setup file output: %w", err)
-			}
-			defaultLogger.SetOutput(fileWriter)
+	case StdoutOutput:
+		output = zapcore.AddSync(os.Stdout)
+	case StderrOutput:
+		output = zapcore.AddSync(os.Stderr)
+	case FileOutput:
+		if cfg.File == "" {
+			return nil, fmt.Errorf("file output specified but no file path provided")
 		}
-	case "stdout":
-		defaultLogger.SetOutput(os.Stdout)
-	case "stderr":
-		defaultLogger.SetOutput(os.Stderr)
-	case "both":
-		if cfg.File != "" {
-			// Create a multi-writer for both file and stderr
-			fileWriter, err := setupFileOutput(cfg.File)
-			if err != nil {
-				return fmt.Errorf("failed to setup file output: %w", err)
-			}
-			defaultLogger.SetOutput(io.MultiWriter(os.Stderr, fileWriter))
-		} else {
-			defaultLogger.SetOutput(os.Stderr)
-		}
+		output = zapcore.AddSync(&lumberjack.Logger{
+			Filename:   cfg.File,
+			MaxSize:    cfg.MaxSize,
+			MaxBackups: cfg.MaxBackups,
+			MaxAge:     cfg.MaxAge,
+			Compress:   cfg.Compress,
+		})
+	case DiscardOutput:
+		output = zapcore.AddSync(io.Discard)
 	default:
-		defaultLogger.SetOutput(os.Stderr)
+		return nil, fmt.Errorf("invalid output type: %s", cfg.Output)
+	}
+
+	// Create custom encoder config
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.TimeKey = "timestamp"
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
+
+	// Create core
+	var encoder zapcore.Encoder
+	if cfg.Format == JSONFormat {
+		encoder = zapcore.NewJSONEncoder(encoderConfig)
+	} else {
+		encoder = zapcore.NewConsoleEncoder(encoderConfig)
+	}
+	core := zapcore.NewCore(encoder, output, zapCfg.Level)
+
+	// Create logger
+	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
+	return &zapLogger{logger: logger, ctx: context.Background()}, nil
+}
+
+func validateConfig(cfg Config) error {
+	switch cfg.Level {
+	case DebugLevel, InfoLevel, WarnLevel, ErrorLevel, FatalLevel:
+	default:
+		return fmt.Errorf("invalid log level: %s", cfg.Level)
+	}
+
+	switch cfg.Format {
+	case JSONFormat, TextFormat:
+	default:
+		return fmt.Errorf("invalid log format: %s", cfg.Format)
+	}
+
+	switch cfg.Output {
+	case StdoutOutput, StderrOutput, FileOutput, DiscardOutput:
+	default:
+		return fmt.Errorf("invalid output type: %s", cfg.Output)
+	}
+
+	if cfg.Output == FileOutput && cfg.File == "" {
+		return fmt.Errorf("file output specified but no file path provided")
 	}
 
 	return nil
 }
 
-// setupFileOutput creates the log directory and opens the log file
-func setupFileOutput(filePath string) (io.Writer, error) {
-	// Ensure directory exists
-	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-		return nil, fmt.Errorf("failed to create log directory: %w", err)
+func getZapLevel(level Level) zap.AtomicLevel {
+	switch level {
+	case DebugLevel:
+		return zap.NewAtomicLevelAt(zapcore.DebugLevel)
+	case InfoLevel:
+		return zap.NewAtomicLevelAt(zapcore.InfoLevel)
+	case WarnLevel:
+		return zap.NewAtomicLevelAt(zapcore.WarnLevel)
+	case ErrorLevel:
+		return zap.NewAtomicLevelAt(zapcore.ErrorLevel)
+	case FatalLevel:
+		return zap.NewAtomicLevelAt(zapcore.FatalLevel)
+	default:
+		return zap.NewAtomicLevelAt(zapcore.InfoLevel)
 	}
+}
 
-	// Open log file
-	f, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open log file: %w", err)
+// Implementation of Logger interface methods
+func (l *zapLogger) Debug(msg string, fields ...Field) {
+	l.logger.Debug(msg, convertFields(fields...)...)
+}
+
+func (l *zapLogger) Info(msg string, fields ...Field) {
+	l.logger.Info(msg, convertFields(fields...)...)
+}
+
+func (l *zapLogger) Warn(msg string, fields ...Field) {
+	l.logger.Warn(msg, convertFields(fields...)...)
+}
+
+func (l *zapLogger) Error(msg string, fields ...Field) {
+	l.logger.Error(msg, convertFields(fields...)...)
+}
+
+func (l *zapLogger) Fatal(msg string, fields ...Field) {
+	l.logger.Fatal(msg, convertFields(fields...)...)
+}
+
+func (l *zapLogger) Debugf(format string, args ...interface{}) {
+	l.logger.Debug(fmt.Sprintf(format, args...))
+}
+
+func (l *zapLogger) Infof(format string, args ...interface{}) {
+	l.logger.Info(fmt.Sprintf(format, args...))
+}
+
+func (l *zapLogger) Warnf(format string, args ...interface{}) {
+	l.logger.Warn(fmt.Sprintf(format, args...))
+}
+
+func (l *zapLogger) Errorf(format string, args ...interface{}) {
+	l.logger.Error(fmt.Sprintf(format, args...))
+}
+
+func (l *zapLogger) Fatalf(format string, args ...interface{}) {
+	l.logger.Fatal(fmt.Sprintf(format, args...))
+}
+
+func (l *zapLogger) With(fields ...Field) Logger {
+	return &zapLogger{
+		logger: l.logger.With(convertFields(fields...)...),
+		ctx:    l.ctx,
 	}
-
-	return f, nil
 }
 
-// WithFields creates a new entry with the given fields
-func WithFields(fields map[string]interface{}) *logrus.Entry {
-	return defaultLogger.WithFields(logrus.Fields(fields))
+func (l *zapLogger) WithContext(ctx context.Context) Logger {
+	return &zapLogger{
+		logger: l.logger,
+		ctx:    ctx,
+	}
 }
 
-// SetOutput sets the logger output
-func SetOutput(out io.Writer) {
-	defaultLogger.SetOutput(out)
+// Helper functions for the default logger
+func Debug(msg string, fields ...Field) {
+	if defaultLogger != nil {
+		defaultLogger.Debug(msg, fields...)
+	}
 }
 
-// Debug logs a message at level Debug
-func Debug(args ...interface{}) {
-	defaultLogger.Debug(args...)
+func Info(msg string, fields ...Field) {
+	if defaultLogger != nil {
+		defaultLogger.Info(msg, fields...)
+	}
 }
 
-// Debugf logs a formatted message at level Debug
+func Warn(msg string, fields ...Field) {
+	if defaultLogger != nil {
+		defaultLogger.Warn(msg, fields...)
+	}
+}
+
+func Error(msg string, fields ...Field) {
+	if defaultLogger != nil {
+		defaultLogger.Error(msg, fields...)
+	}
+}
+
+func Fatal(msg string, fields ...Field) {
+	if defaultLogger != nil {
+		defaultLogger.Fatal(msg, fields...)
+	}
+}
+
 func Debugf(format string, args ...interface{}) {
-	defaultLogger.Debugf(format, args...)
+	if defaultLogger != nil {
+		defaultLogger.Debugf(format, args...)
+	}
 }
 
-// Info logs a message at level Info
-func Info(args ...interface{}) {
-	defaultLogger.Info(args...)
-}
-
-// Infof logs a formatted message at level Info
 func Infof(format string, args ...interface{}) {
-	defaultLogger.Infof(format, args...)
+	if defaultLogger != nil {
+		defaultLogger.Infof(format, args...)
+	}
 }
 
-// Warn logs a message at level Warn
-func Warn(args ...interface{}) {
-	defaultLogger.Warn(args...)
-}
-
-// Warnf logs a formatted message at level Warn
 func Warnf(format string, args ...interface{}) {
-	defaultLogger.Warnf(format, args...)
+	if defaultLogger != nil {
+		defaultLogger.Warnf(format, args...)
+	}
 }
 
-// Error logs a message at level Error
-func Error(args ...interface{}) {
-	defaultLogger.Error(args...)
-}
-
-// Errorf logs a formatted message at level Error
 func Errorf(format string, args ...interface{}) {
-	defaultLogger.Errorf(format, args...)
+	if defaultLogger != nil {
+		defaultLogger.Errorf(format, args...)
+	}
 }
 
-// Fatal logs a message at level Fatal then the process will exit with status set to 1
-func Fatal(args ...interface{}) {
-	defaultLogger.Fatal(args...)
-}
-
-// Fatalf logs a formatted message at level Fatal then the process will exit with status set to 1
 func Fatalf(format string, args ...interface{}) {
-	defaultLogger.Fatalf(format, args...)
+	if defaultLogger != nil {
+		defaultLogger.Fatalf(format, args...)
+	}
+}
+
+// convertFields converts our Field type to zap.Field
+func convertFields(fields ...Field) []zap.Field {
+	zapFields := make([]zap.Field, len(fields))
+	for i, f := range fields {
+		zapFields[i] = zap.Any(f.Key, f.Value)
+	}
+	return zapFields
 }
