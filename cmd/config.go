@@ -86,7 +86,7 @@ func setConfig(key, value string) {
 		return
 	}
 
-	if err := config.Save(); err != nil {
+	if err := cfg.Save(); err != nil {
 		logger.Errorf("Failed to save configuration: %v", err)
 		return
 	}
@@ -98,21 +98,21 @@ func getConfigValue(cfg *config.Config, key string) string {
 	key = strings.ToLower(key)
 	switch key {
 	case "editor":
-		return cfg.Editor
+		return cfg.General.Editor
 	case "data_home", "datahome":
-		return cfg.DataHome
+		return cfg.Dir.DataHome
 	case "template_dir", "templatedir":
-		return cfg.TemplateDir
+		return cfg.Dir.TemplateDir
 	case "periodic_dir", "periodicdir":
-		return cfg.PeriodicDir
+		return cfg.Dir.PeriodicDir
 	case "zettel_dir", "zetteldir":
-		return cfg.ZettelDir
+		return cfg.Dir.ZettelDir
 	case "log.level", "loglevel":
-		return cfg.Log.Level
+		return string(cfg.Log.Level)
 	case "log.format", "logformat":
-		return cfg.Log.Format
+		return string(cfg.Log.Format)
 	case "log.output", "logoutput":
-		return cfg.Log.Output
+		return string(cfg.Log.Output)
 	default:
 		return ""
 	}
@@ -122,21 +122,21 @@ func setConfigValue(cfg *config.Config, key, value string) bool {
 	key = strings.ToLower(key)
 	switch key {
 	case "editor":
-		cfg.Editor = value
+		cfg.General.Editor = value
 	case "data_home", "datahome":
-		cfg.DataHome = value
+		cfg.Dir.DataHome = value
 	case "template_dir", "templatedir":
-		cfg.TemplateDir = value
+		cfg.Dir.TemplateDir = value
 	case "periodic_dir", "periodicdir":
-		cfg.PeriodicDir = value
+		cfg.Dir.PeriodicDir = value
 	case "zettel_dir", "zetteldir":
-		cfg.ZettelDir = value
+		cfg.Dir.ZettelDir = value
 	case "log.level", "loglevel":
-		cfg.Log.Level = value
+		cfg.Log.Level = logger.Level(value)
 	case "log.format", "logformat":
-		cfg.Log.Format = value
+		cfg.Log.Format = logger.Format(value)
 	case "log.output", "logoutput":
-		cfg.Log.Output = value
+		cfg.Log.Output = logger.OutputType(value)
 	default:
 		return false
 	}

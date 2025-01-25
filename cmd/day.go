@@ -5,32 +5,22 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/a-kostevski/exo/internal/config"
-	"github.com/a-kostevski/exo/internal/note/builtin"
-	"github.com/a-kostevski/exo/internal/templates"
+	"github.com/a-kostevski/exo/internal/note"
 )
 
 var dayCmd = &cobra.Command{
 	Use:   "day",
 	Short: "Create or open today's daily note",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg := config.MustGet()
-		tm, err := templates.NewTemplateManager(cfg.TemplateDir)
+		// Get or create today's note
+		daily, err := note.GetOrCreateTodayNote()
 		if err != nil {
-			return fmt.Errorf("failed to create template manager: %w", err)
+			return fmt.Errorf("failed to get/create daily note: %w", err)
 		}
 
-		note, err := builtin.GetOrCreateTodayNote(tm)
-		if err != nil {
-			return fmt.Errorf("failed to create daily note: %w", err)
-		}
-
-		if err := note.Save(); err != nil {
-			return fmt.Errorf("failed to save note: %w", err)
-		}
-
-		if err := note.Open(); err != nil {
-			return fmt.Errorf("failed to open note: %w", err)
+		if err := daily.Open(); err != nil {
+			return fmt.Errorf("failed to open daily note: %w", err)
 		}
 
 		return nil

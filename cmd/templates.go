@@ -20,7 +20,7 @@ var templateCmd = cobra.Command{
 			return fmt.Errorf("failed to get configuration: %w", err)
 		}
 
-		tm, err := templates.NewTemplateManager(cfg.TemplateDir)
+		tm, err := templates.NewTemplateManager(cfg.Dir.TemplateDir)
 		if err != nil {
 			return fmt.Errorf("failed to create template manager: %w", err)
 		}
@@ -37,7 +37,7 @@ var templateCmd = cobra.Command{
 
 		fmt.Println("Available templates:")
 		for _, name := range templates {
-			customPath := filepath.Join(cfg.TemplateDir, name+".md")
+			customPath := filepath.Join(cfg.Dir.TemplateDir, name+".md")
 			if _, err := os.Stat(customPath); err == nil {
 				fmt.Printf("  - [Custom] ")
 			} else {

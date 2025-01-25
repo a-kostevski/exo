@@ -2,15 +2,14 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/a-kostevski/exo/internal/config"
 	"github.com/a-kostevski/exo/internal/logger"
 	"github.com/a-kostevski/exo/internal/templates"
+	"github.com/a-kostevski/exo/internal/utils"
 	"github.com/spf13/cobra"
 )
 
-// newInitCmd creates a new init command
 func newInitCmd() *cobra.Command {
 	var force bool
 
@@ -20,9 +19,6 @@ func newInitCmd() *cobra.Command {
 		Long: `Initialize the exo configuration and create necessary directories.
 		If configuration already exists, it will not be overwritten unless --force is used.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			logger.Info("Starting initialization...")
-			logger.Debug("Initializing with force flag:", force)
-
 			// Initialize configuration
 			logger.Debug("Initializing configuration...")
 			if err := config.Initialize(""); err != nil {
@@ -32,32 +28,15 @@ func newInitCmd() *cobra.Command {
 
 			// Get configuration
 			cfg := config.MustGet()
-			logger.Debug("Configuration loaded")
 
 			// Create required directories
-			dirs := []string{
-				cfg.DataHome,
-				cfg.TemplateDir,
-				cfg.PeriodicDir,
-				cfg.ZettelDir,
-			}
-
-			logger.Info("Creating required directories...")
-			for _, dir := range dirs {
-				if _, err := os.Stat(dir); os.IsNotExist(err) {
-					logger.Debugf("Creating directory: %s", dir)
-					if err := os.MkdirAll(dir, 0755); err != nil {
-						return fmt.Errorf("failed to create directory %s: %w", dir, err)
-					}
-					logger.Infof("Created directory: %s", dir)
-				} else {
-					logger.Infof("Directory already exists: %s", dir)
-				}
+			if err := ensureDirectories(cfg); err != nil {
+				return fmt.Errorf("failed to create directories: %w", err)
 			}
 
 			logger.Info("Installing default templates...")
-			if err := templates.InstallDefault(cfg.TemplateDir, force); err != nil {
-				return fmt.Errorf("failed to copy default templates: %w", err)
+			if err := installTemplates(cfg, force); err != nil {
+				return fmt.Errorf("failed to install templates: %w", err)
 			}
 			logger.Info("Default templates installed successfully")
 
@@ -68,6 +47,35 @@ func newInitCmd() *cobra.Command {
 
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force overwrite existing configuration and templates")
 	return cmd
+}
+
+// ensureDirectories creates all required directories
+func ensureDirectories(cfg *config.Config) error {
+	dirs := []string{
+		cfg.Dir.DataHome,
+		cfg.Dir.IdeaDir,
+		cfg.Dir.TemplateDir,
+		cfg.Dir.PeriodicDir,
+		cfg.Dir.ZettelDir,
+	}
+
+	for _, dir := range dirs {
+		if err := utils.EnsureDirectoryExists(dir); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+		logger.Info("Created directory", logger.Field{Key: "path", Value: dir})
+	}
+
+	return nil
+}
+
+// installTemplates installs default templates
+func installTemplates(cfg *config.Config, force bool) error {
+	// Install default templates
+	if err := templates.InstallDefault(cfg.Dir.TemplateDir, force); err != nil {
+		return fmt.Errorf("failed to install templates: %w", err)
+	}
+	return nil
 }
 
 func init() {

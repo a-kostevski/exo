@@ -15,6 +15,8 @@ var templatesFS embed.FS
 const (
 	defaultTemplateDir = "default"
 	backupExtension    = ".bak"
+	defaultPerms       = 0644 // for files
+	defaultDirPerms    = 0755 // for directories
 )
 
 // InputReader defines an interface for reading user input
@@ -49,13 +51,12 @@ func InstallDefault(path string, force bool) error {
 
 // InstallDefaultWithOptions installs default templates with custom options
 func InstallDefaultWithOptions(opts InstallOptions) error {
-
 	if err := validateTemplatePath(opts.TemplateDir); err != nil {
 		return err
 	}
 
 	// Ensure template directory exists
-	if err := os.MkdirAll(opts.TemplateDir, defaultPerms); err != nil {
+	if err := os.MkdirAll(opts.TemplateDir, defaultDirPerms); err != nil {
 		return fmt.Errorf("failed to create template directory: %w", err)
 	}
 
@@ -78,7 +79,6 @@ func InstallDefaultWithOptions(opts InstallOptions) error {
 	}
 
 	if len(existingFiles) > 0 {
-
 		if !opts.Force {
 			action, err := promptForAction(opts.Reader)
 			if err != nil {
@@ -113,7 +113,7 @@ func findExistingFiles(path string, entries []os.DirEntry) ([]string, error) {
 }
 
 func promptForAction(reader InputReader) (string, error) {
-	fmt.Print("Found existing template files. Choose action \n [S]kip all\n[O]verwrite all\n[C]hoose per file")
+	fmt.Print("Found existing template files. Choose action \n [S]kip all\n[O]verwrite all\n[C]hoose per file\n")
 	response, err := reader.ReadResponse()
 	if err != nil {
 		return "", fmt.Errorf("failed to read user response: %w", err)
@@ -134,7 +134,6 @@ func promptForAction(reader InputReader) (string, error) {
 }
 
 func processTemplateInstallation(opts InstallOptions, entries []os.DirEntry) error {
-
 	stats := struct {
 		installed int
 		skipped   int
@@ -180,7 +179,6 @@ func processTemplateInstallation(opts InstallOptions, entries []os.DirEntry) err
 }
 
 func installTemplate(opts InstallOptions, entry os.DirEntry) error {
-
 	content, err := templatesFS.ReadFile(filepath.Join(defaultTemplateDir, entry.Name()))
 	if err != nil {
 		return fmt.Errorf("failed to read template file %s: %w", entry.Name(), err)
@@ -207,13 +205,11 @@ func installTemplate(opts InstallOptions, entry os.DirEntry) error {
 	}
 
 	// Ensure parent directory exists
-	if err := os.MkdirAll(filepath.Dir(destPath), defaultPerms); err != nil {
-
+	if err := os.MkdirAll(filepath.Dir(destPath), defaultDirPerms); err != nil {
 		return fmt.Errorf("failed to create parent directory for %s: %w", destPath, err)
 	}
 
 	if err := os.WriteFile(destPath, content, defaultPerms); err != nil {
-
 		return fmt.Errorf("failed to write template %s: %w", entry.Name(), err)
 	}
 	return nil
@@ -230,7 +226,6 @@ func promptForFile(reader InputReader, file string) (bool, error) {
 }
 
 func createBackup(path string) error {
-
 	// First, check if backup already exists
 	backupPath := path + backupExtension
 	if _, err := os.Stat(backupPath); err == nil {

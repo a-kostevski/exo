@@ -129,13 +129,13 @@ func load(configPath string) (*Config, error) {
 	}
 
 	// Expand paths
-	cfg.Dir.DataHome = utils.SanitizePath(cfg.Dir.DataHome, home)
-	cfg.Dir.TemplateDir = utils.SanitizePath(cfg.Dir.TemplateDir, home)
-	cfg.Dir.PeriodicDir = utils.SanitizePath(cfg.Dir.PeriodicDir, home)
-	cfg.Dir.ZettelDir = utils.SanitizePath(cfg.Dir.ZettelDir, home)
-	cfg.Dir.ProjectsDir = utils.SanitizePath(cfg.Dir.ProjectsDir, home)
-	cfg.Dir.InboxDir = utils.SanitizePath(cfg.Dir.InboxDir, home)
-	cfg.Dir.IdeaDir = utils.SanitizePath(cfg.Dir.IdeaDir, home)
+	cfg.Dir.DataHome = sanitizePath(cfg.Dir.DataHome, home)
+	cfg.Dir.TemplateDir = sanitizePath(cfg.Dir.TemplateDir, home)
+	cfg.Dir.PeriodicDir = sanitizePath(cfg.Dir.PeriodicDir, home)
+	cfg.Dir.ZettelDir = sanitizePath(cfg.Dir.ZettelDir, home)
+	cfg.Dir.ProjectsDir = sanitizePath(cfg.Dir.ProjectsDir, home)
+	cfg.Dir.InboxDir = sanitizePath(cfg.Dir.InboxDir, home)
+	cfg.Dir.IdeaDir = sanitizePath(cfg.Dir.IdeaDir, home)
 
 	// Apply environment variable overrides
 	if editor := os.Getenv("EDITOR"); editor != "" {
@@ -177,17 +177,44 @@ func defaultConfig() map[string]interface{} {
 // 3. $HOME/.local/share/exo
 func getDataHome(home string) string {
 	if dataHome := os.Getenv(envDataHome); dataHome != "" {
-		return utils.SanitizePath(dataHome, home)
+		return sanitizePath(dataHome, home)
 	}
 
 	xdgData := utils.GetXDGDataHome()
 	if xdgData == "" {
 		xdgData = filepath.Join(home, defaultXDGData)
 	} else {
-		xdgData = utils.SanitizePath(xdgData, home)
+		xdgData = sanitizePath(xdgData, home)
 	}
 
 	return filepath.Join(xdgData, "exo")
+}
+
+// sanitizePath cleans and normalizes the provided path
+func sanitizePath(path, home string) string {
+	expanded := utils.ExpandPath(path)
+	cleaned := filepath.Clean(expanded)
+	if !filepath.IsAbs(cleaned) {
+		cleaned = filepath.Join(home, cleaned)
+	}
+	return cleaned
+}
+
+// ensureDirectories creates all necessary directories for the application.
+// It returns an error if any directory cannot be created.
+func ensureDirectories(paths ...string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	for _, path := range paths {
+		absPath := sanitizePath(path, home)
+		if err := os.MkdirAll(absPath, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", absPath, err)
+		}
+		logger.Info("Created directory", logger.Field{Key: "path", Value: absPath})
+	}
+	return nil
 }
 
 // Validate checks if the configuration is valid
@@ -256,8 +283,7 @@ func (c *Config) Save() error {
 	configDir := filepath.Join(home, ".config", "exo")
 	configPath := filepath.Join(configDir, "config.yaml")
 
-	// Create config directory if it doesn't exist
-	if err := utils.EnsureDirectories(configDir); err != nil {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
