@@ -1,10 +1,10 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 
@@ -15,63 +15,35 @@ import (
 
 // Environment variables
 const (
-	envDataHome     = "EXO_DATA_HOME"
-	envXDGData      = "XDG_DATA_HOME"
-	envXDGCache     = "XDG_CACHE_HOME"
-	defaultXDGData  = ".local/share"
-	defaultXDGCache = ".cache"
+	envDataHome      = "EXO_DATA_HOME"
+	envXDGData       = "XDG_DATA_HOME"
+	envXDGCache      = "XDG_CACHE_HOME"
+	defaultXDGData   = ".local/share"
+	defaultXDGCache  = ".cache"
+	defaultXDGConfig = ".config"
 )
 
 // Default configuration values
 const (
-	defaultEditor    = "vim"
-	defaultLogLevel  = "info"
-	defaultLogFormat = "text"
-	defaultLogOutput = "stderr"
+	defaultEditor    = "nvim"
+	defaultLogLevel  = string(logger.InfoLevel)
+	defaultLogFormat = string(logger.TextFormat)
+	defaultLogOutput = "stdout"
 )
 
-// Log output options
-const (
-	LogOutputStdout = "stdout"
-	LogOutputStderr = "stderr"
-	LogOutputFile   = "file"
-	LogOutputBoth   = "both"
-)
-
-// Log format options
-const (
-	LogFormatText = "text"
-	LogFormatJSON = "json"
-)
-
-// Log level options
-const (
-	LogLevelDebug = "debug"
-	LogLevelInfo  = "info"
-	LogLevelWarn  = "warn"
-	LogLevelError = "error"
-)
-
-var (
-	instance *Config
-	once     sync.Once
-	mu       sync.RWMutex
-)
-
-// For testing purposes only
-func resetInstance() {
-	mu.Lock()
-	defer mu.Unlock()
-	instance = nil
-	once = sync.Once{}
+// Config represents the main configuration structure
+type Config struct {
+	General GeneralConfig `mapstructure:"general"`
+	Dir     DirConfig     `mapstructure:"dir"`
+	Log     logger.Config `mapstructure:"log"`
 }
 
-// Config holds the application configuration
-type Config struct {
-	// Editor is the command to open notes
+type GeneralConfig struct {
 	Editor string `mapstructure:"editor"`
+}
 
-	// Directory paths
+// DirConfig holds directory-related configuration
+type DirConfig struct {
 	DataHome    string `mapstructure:"data_home"`
 	TemplateDir string `mapstructure:"template_dir"`
 	PeriodicDir string `mapstructure:"periodic_dir"`
@@ -79,383 +51,253 @@ type Config struct {
 	ProjectsDir string `mapstructure:"projects_dir"`
 	InboxDir    string `mapstructure:"inbox_dir"`
 	IdeaDir     string `mapstructure:"idea_dir"`
-
-	// Logging configuration
-	Log logger.Config `mapstructure:"log"`
 }
 
-// Get returns the global configuration instance.
-// It will return an error if the configuration hasn't been loaded yet.
+var (
+	cfg  *Config
+	once sync.Once
+)
+
+// Get returns the singleton config instance
 func Get() (*Config, error) {
-	mu.RLock()
-	defer mu.RUnlock()
-
-	if instance == nil {
-		logger.Error("Configuration not initialized")
-		return nil, fmt.Errorf("configuration not initialized")
+	if cfg == nil {
+		return nil, errors.New("configuration not initialized")
 	}
-	logger.Debug("Retrieved configuration instance")
-	return instance, nil
+	return cfg, nil
 }
 
-// MustGet returns the global configuration instance.
-// It will panic if the configuration hasn't been loaded yet.
 func MustGet() *Config {
-	cfg, err := Get()
-	if err != nil {
-		panic(err)
+	if cfg == nil {
+		panic("configuration not initialized")
 	}
 	return cfg
 }
 
-// Initialize loads the configuration from the specified path
-func Initialize(path string) error {
-	// Initialize logger first
-	err := logger.Initialize(logger.Config{
-		Level:  "panic",
-		Format: "text",
-		Output: "discard",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to initialize logger: %w", err)
-	}
-
-	logger.Infof("Initializing configuration with file: %s", path)
+// Initialize sets up the configuration once
+func Initialize(configPath string) error {
 	var initErr error
 	once.Do(func() {
-		mu.Lock()
-		defer mu.Unlock()
-
-		var cfg *Config
-		cfg, initErr = load(path)
-		if initErr != nil {
-			logger.Errorf("Failed to load configuration: %v", initErr)
-			return
+		var loadedCfg *Config
+		loadedCfg, initErr = load(configPath)
+		if initErr == nil {
+			initErr = loadedCfg.Validate()
+			if initErr == nil {
+				cfg = loadedCfg
+			}
 		}
-		instance = cfg
-		logger.Info("Configuration initialized successfully")
 	})
 	return initErr
 }
 
-// getDataHome returns the data home directory based on environment variables
-func getDataHome(home string) string {
-	// Check EXO_DATA_HOME first
-	if dataHome := os.Getenv(envDataHome); dataHome != "" {
-		logger.Debugf("Using EXO_DATA_HOME: %s", dataHome)
-		return dataHome
-	}
-
-	// Check XDG_DATA_HOME next
-	xdgData := os.Getenv(envXDGData)
-	if xdgData == "" {
-		xdgData = filepath.Join(home, defaultXDGData)
-		logger.Debugf("Using default XDG data home: %s", xdgData)
-	} else {
-		logger.Debugf("Using XDG_DATA_HOME: %s", xdgData)
-	}
-
-	// Return XDG_DATA_HOME/exo
-	dataHome := filepath.Join(xdgData, "exo")
-	logger.Debugf("Final data home directory: %s", dataHome)
-	return dataHome
-}
-
-// load loads the configuration from the specified file
-func load(cfgFile string) (*Config, error) {
-	logger.Debug("Loading configuration")
+// Returns an error if configuration is not initialized.
+func load(configPath string) (*Config, error) {
 	v := viper.New()
+	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		logger.Errorf("Failed to get user home directory: %v", err)
 		return nil, fmt.Errorf("failed to get user home directory: %w", err)
 	}
-	logger.Debugf("User home directory: %s", home)
-
-	// Get data home directory
-	dataHome := getDataHome(home)
+	v.AddConfigPath(filepath.Join(home, defaultXDGConfig))
 
 	// Set default values
-	defaults := getDefaults(dataHome)
-	for key, value := range defaults {
-		v.SetDefault(key, value)
-		logger.Debugf("Setting default value for %s: %v", key, value)
-	}
+	v.SetDefault("general.editor", defaultEditor)
+	v.SetDefault("log.level", defaultLogLevel)
+	v.SetDefault("log.format", defaultLogFormat)
+	v.SetDefault("log.output", defaultLogOutput)
 
-	// If config file is specified, use it
-	if cfgFile != "" {
-		logger.Infof("Using specified config file: %s", cfgFile)
-		v.SetConfigFile(cfgFile)
-	} else {
-		// Search in default locations
-		configPath := filepath.Join(home, ".config", "exo")
-		logger.Debugf("Searching for config in: %s", configPath)
-		v.AddConfigPath(configPath)
-		v.SetConfigName("config")
-	}
+	dataHome := getDataHome(home)
+	v.SetDefault("dir.data_home", dataHome)
+	v.SetDefault("dir.template_dir", filepath.Join(dataHome, "templates"))
+	v.SetDefault("dir.periodic_dir", filepath.Join(dataHome, "periodic"))
+	v.SetDefault("dir.zettel_dir", filepath.Join(dataHome, "zettel"))
+	v.SetDefault("dir.projects_dir", filepath.Join(dataHome, "projects"))
+	v.SetDefault("dir.inbox_dir", filepath.Join(dataHome, "0-inbox"))
+	v.SetDefault("dir.idea_dir", filepath.Join(dataHome, "ideas"))
 
-	// Read config file
-	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			logger.Errorf("Failed to read config file: %v", err)
+	if configPath != "" {
+		v.SetConfigFile(configPath)
+		if err := v.ReadInConfig(); err != nil {
 			return nil, fmt.Errorf("failed to read config file: %w", err)
 		}
-		// Config file not found, use defaults
-		logger.Info("No config file found, using defaults")
-		logConfig := defaults["log"].(map[string]interface{})
-		cfg := &Config{
-			Editor:      defaults["editor"].(string),
-			DataHome:    defaults["data_home"].(string),
-			TemplateDir: defaults["template_dir"].(string),
-			PeriodicDir: defaults["periodic_dir"].(string),
-			ZettelDir:   defaults["zettel_dir"].(string),
-			Log: logger.Config{
-				Level:  logConfig["level"].(string),
-				Format: logConfig["format"].(string),
-				Output: logConfig["output"].(string),
-				File:   logConfig["file"].(string),
-			},
-		}
-		return cfg, nil
 	}
-	logger.Info("Successfully read config file")
 
-	// Unmarshal config
-	cfg := &Config{}
-	if err := v.Unmarshal(cfg); err != nil {
-		logger.Errorf("Failed to unmarshal config: %v", err)
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
-	logger.Debug("Successfully unmarshaled config")
 
-	// Expand tildes in paths
-	cfg.DataHome = utils.ExpandPath(cfg.DataHome)
-	cfg.TemplateDir = utils.ExpandPath(cfg.TemplateDir)
-	cfg.PeriodicDir = utils.ExpandPath(cfg.PeriodicDir)
-	cfg.ZettelDir = utils.ExpandPath(cfg.ZettelDir)
-	logger.Debug("Expanded all path variables")
+	// Expand paths
+	cfg.Dir.DataHome = sanitizePath(cfg.Dir.DataHome, home)
+	cfg.Dir.TemplateDir = sanitizePath(cfg.Dir.TemplateDir, home)
+	cfg.Dir.PeriodicDir = sanitizePath(cfg.Dir.PeriodicDir, home)
+	cfg.Dir.ZettelDir = sanitizePath(cfg.Dir.ZettelDir, home)
+	cfg.Dir.ProjectsDir = sanitizePath(cfg.Dir.ProjectsDir, home)
+	cfg.Dir.InboxDir = sanitizePath(cfg.Dir.InboxDir, home)
+	cfg.Dir.IdeaDir = sanitizePath(cfg.Dir.IdeaDir, home)
 
-	// Validate config
-	if err := cfg.Validate(); err != nil {
-		logger.Errorf("Invalid configuration: %v", err)
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+	// Apply environment variable overrides
+	if editor := os.Getenv("EDITOR"); editor != "" {
+		cfg.General.Editor = editor
 	}
-	logger.Info("Configuration validation successful")
 
-	return cfg, nil
+	return &cfg, nil
 }
 
-func getDefaults(dataHome string) map[string]interface{} {
-	cacheDir := os.Getenv(envXDGCache)
-	if cacheDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			logger.Warnf("Failed to get user home directory: %v, using current directory for cache", err)
-			cacheDir = defaultXDGCache
-		} else {
-			cacheDir = filepath.Join(home, defaultXDGCache)
-		}
+func defaultConfig() map[string]interface{} {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "~"
 	}
-	logFile := filepath.Join(cacheDir, "exo", "exo.log")
-	logger.Debugf("Using log file path: %s", logFile)
 
+	dataHome := getDataHome(home)
 	return map[string]interface{}{
-		"editor":       defaultEditor,
-		"data_home":    dataHome,
-		"template_dir": filepath.Join(dataHome, "templates"),
-		"periodic_dir": filepath.Join(dataHome, "periodic"),
-		"zettel_dir":   filepath.Join(dataHome, "zettel"),
-		"projects_dir": filepath.Join(dataHome, "projects"),
-		"inbox_dir":    filepath.Join(dataHome, "0-inbox"),
-		"log": map[string]interface{}{
-			"level":  defaultLogLevel,
-			"format": defaultLogFormat,
-			"output": defaultLogOutput,
-			"file":   logFile,
-		},
+		"general.editor":   defaultEditor,
+		"log.level":        defaultLogLevel,
+		"log.format":       defaultLogFormat,
+		"log.output":       defaultLogOutput,
+		"dir.data_home":    dataHome,
+		"dir.template_dir": filepath.Join(dataHome, "templates"),
+		"dir.periodic_dir": filepath.Join(dataHome, "periodic"),
+		"dir.zettel_dir":   filepath.Join(dataHome, "zettel"),
+		"dir.projects_dir": filepath.Join(dataHome, "projects"),
+		"dir.inbox_dir":    filepath.Join(dataHome, "0-inbox"),
+		"dir.idea_dir":     filepath.Join(dataHome, "ideas"),
 	}
+}
+
+// getDataHome determines the appropriate data home directory based on environment
+// variables and system defaults. It follows the XDG Base Directory Specification
+// with additional support for EXO-specific overrides.
+//
+// Priority order:
+// 1. EXO_DATA_HOME environment variable
+// 2. XDG_DATA_HOME environment variable + "/exo"
+// 3. $HOME/.local/share/exo
+func getDataHome(home string) string {
+	if dataHome := os.Getenv(envDataHome); dataHome != "" {
+		return sanitizePath(dataHome, home)
+	}
+
+	xdgData := utils.GetXDGDataHome()
+	if xdgData == "" {
+		xdgData = filepath.Join(home, defaultXDGData)
+	} else {
+		xdgData = sanitizePath(xdgData, home)
+	}
+
+	return filepath.Join(xdgData, "exo")
+}
+
+// sanitizePath cleans and normalizes the provided path
+func sanitizePath(path, home string) string {
+	expanded := utils.ExpandPath(path)
+	cleaned := filepath.Clean(expanded)
+	if !filepath.IsAbs(cleaned) {
+		cleaned = filepath.Join(home, cleaned)
+	}
+	return cleaned
+}
+
+// ensureDirectories creates all necessary directories for the application.
+// It returns an error if any directory cannot be created.
+func ensureDirectories(paths ...string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	for _, path := range paths {
+		absPath := sanitizePath(path, home)
+		if err := os.MkdirAll(absPath, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", absPath, err)
+		}
+		logger.Info("Created directory", logger.Field{Key: "path", Value: absPath})
+	}
+	return nil
 }
 
 // Validate checks if the configuration is valid
 func (c *Config) Validate() error {
-	logger.Debug("Validating configuration")
+	logger.Info("Validating configuration")
 
-	if c.Editor == "" {
+	if c.General.Editor == "" {
 		return fmt.Errorf("editor cannot be empty")
 	}
 
-	if c.DataHome == "" {
+	if c.Dir.DataHome == "" {
 		return fmt.Errorf("data_home cannot be empty")
 	}
 
-	if c.TemplateDir == "" {
+	if c.Dir.TemplateDir == "" {
 		return fmt.Errorf("template_dir cannot be empty")
 	}
 
-	if c.PeriodicDir == "" {
+	if c.Dir.PeriodicDir == "" {
 		return fmt.Errorf("periodic_dir cannot be empty")
 	}
 
-	if c.ZettelDir == "" {
+	if c.Dir.ZettelDir == "" {
 		return fmt.Errorf("zettel_dir cannot be empty")
 	}
 
-	logger.Debug("Configuration validation passed")
+	logger.Info("Configuration validation passed")
 	return nil
 }
 
-// String returns a pretty-printed string representation of the configuration
 func (c *Config) String() string {
 	var sb strings.Builder
 	sb.WriteString("Configuration:\n")
-	sb.WriteString("-------------\n")
+	sb.WriteString("-------------\n\n")
 
-	// Use reflection to get all fields
-	val := reflect.ValueOf(c).Elem()
-	typ := val.Type()
+	// General section
+	sb.WriteString("General:\n")
+	sb.WriteString(fmt.Sprintf("  editor:        %s\n\n", c.General.Editor))
 
-	// Track the current section
-	var currentSection string
+	// Directories section
+	sb.WriteString("Directories:\n")
+	sb.WriteString(fmt.Sprintf("  data_home:     %s\n", c.Dir.DataHome))
+	sb.WriteString(fmt.Sprintf("  template_dir:  %s\n", c.Dir.TemplateDir))
+	sb.WriteString(fmt.Sprintf("  periodic_dir:  %s\n", c.Dir.PeriodicDir))
+	sb.WriteString(fmt.Sprintf("  zettel_dir:    %s\n", c.Dir.ZettelDir))
+	sb.WriteString(fmt.Sprintf("  projects_dir:  %s\n", c.Dir.ProjectsDir))
+	sb.WriteString(fmt.Sprintf("  inbox_dir:     %s\n", c.Dir.InboxDir))
+	sb.WriteString(fmt.Sprintf("  idea_dir:      %s\n\n", c.Dir.IdeaDir))
 
-	// Process each field
-	for i := 0; i < val.NumField(); i++ {
-		field := val.Field(i)
-		fieldType := typ.Field(i)
-
-		// Get the mapstructure tag which represents the config key
-		configKey := fieldType.Tag.Get("mapstructure")
-		if configKey == "" {
-			configKey = fieldType.Name
-		}
-
-		// Determine the section based on the field name or type
-		var section string
-		if fieldType.Name == "Log" {
-			section = "Logging"
-		} else if strings.HasSuffix(fieldType.Name, "Dir") || fieldType.Name == "DataHome" {
-			section = "Directories"
-		} else {
-			section = "General"
-		}
-
-		// Print section header if we're entering a new section
-		if section != currentSection {
-			if currentSection != "" {
-				sb.WriteString("\n")
-			}
-			sb.WriteString(section + ":\n")
-			currentSection = section
-		}
-
-		// Handle the Log struct specially
-		if fieldType.Name == "Log" {
-			logVal := reflect.ValueOf(c.Log)
-			logType := logVal.Type()
-
-			// Print each log field
-			for j := 0; j < logVal.NumField(); j++ {
-				logField := logVal.Field(j)
-				logFieldType := logType.Field(j)
-				logKey := logFieldType.Tag.Get("mapstructure")
-				if logKey == "" {
-					logKey = logFieldType.Name
-				}
-
-				// Only print File field if it's not empty
-				if logFieldType.Name == "File" && logField.String() == "" {
-					continue
-				}
-
-				sb.WriteString(fmt.Sprintf("  %-13s %v\n", logKey+":", logField.Interface()))
-			}
-			continue
-		}
-
-		// Print regular fields with proper alignment
-		sb.WriteString(fmt.Sprintf("  %-13s %v\n", configKey+":", field.Interface()))
-	}
+	// Logging section
+	sb.WriteString("Logging:\n")
+	sb.WriteString(fmt.Sprintf("  level:         %s\n", c.Log.Level))
+	sb.WriteString(fmt.Sprintf("  format:        %s\n", c.Log.Format))
+	sb.WriteString(fmt.Sprintf("  output:        %s\n", c.Log.Output))
 
 	return sb.String()
 }
 
 // Save persists the current configuration to file
-func Save() error {
-	mu.Lock()
-	defer mu.Unlock()
-
-	if instance == nil {
-		logger.Error("Cannot save: configuration not initialized")
-		return fmt.Errorf("configuration not initialized")
-	}
-
-	logger.Debug("Starting configuration save")
-
-	// Get user's home directory
+func (c *Config) Save() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		logger.Errorf("Failed to get user home directory: %v", err)
 		return fmt.Errorf("failed to get user home directory: %w", err)
 	}
-	logger.Debugf("Using home directory: %s", home)
 
-	// Ensure config directory exists
 	configDir := filepath.Join(home, ".config", "exo")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		logger.Errorf("Failed to create config directory %s: %v", configDir, err)
+	configPath := filepath.Join(configDir, "config.yaml")
+
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
-	logger.Debugf("Using config directory: %s", configDir)
 
-	// Create viper instance
 	v := viper.New()
 	v.SetConfigType("yaml")
-	configFile := filepath.Join(configDir, "config.yaml")
-	v.SetConfigFile(configFile)
-	logger.Debugf("Config file path: %s", configFile)
+	v.SetConfigFile(configPath)
 
-	// Build configuration map
-	config := map[string]interface{}{
-		"editor":       instance.Editor,
-		"data_home":    instance.DataHome,
-		"template_dir": instance.TemplateDir,
-		"periodic_dir": instance.PeriodicDir,
-		"zettel_dir":   instance.ZettelDir,
-		"log": map[string]interface{}{
-			"level":  instance.Log.Level,
-			"format": instance.Log.Format,
-			"output": instance.Log.Output,
-		},
-	}
-	logger.Debugf("Current configuration state: %+v", config)
+	v.Set("general", c.General)
+	v.Set("dir", c.Dir)
+	v.Set("log", c.Log)
 
-	// Set all configuration values
-	for key, value := range config {
-		v.Set(key, value)
-		logger.Debugf("Setting config value: %s = %v", key, value)
+	if err := v.WriteConfigAs(configPath); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
-	// Write config to file, handling the case where it might already exist
-	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		logger.Debug("Creating new config file")
-		if err := v.WriteConfig(); err != nil {
-			logger.Errorf("Failed to write new config file: %v", err)
-			return fmt.Errorf("failed to write new config file: %w", err)
-		}
-		logger.Info("Created new configuration file")
-	} else {
-		logger.Debug("Updating existing config file")
-		if err := v.SafeWriteConfig(); err != nil {
-			// If the error is because the file exists, try to overwrite it
-			if err := v.WriteConfig(); err != nil {
-				logger.Errorf("Failed to update existing config file: %v", err)
-				return fmt.Errorf("failed to update existing config file: %w", err)
-			}
-		}
-		logger.Info("Updated existing configuration file")
-	}
-
-	logger.Info("Configuration saved successfully")
 	return nil
 }

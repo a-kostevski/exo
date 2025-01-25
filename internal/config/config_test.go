@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/a-kostevski/exo/internal/logger"
@@ -10,14 +12,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// resetInstance is a helper function for tests to reset the singleton instance
+func resetInstance() {
+	cfg = nil
+	// Create a new sync.Once
+	once = sync.Once{}
+}
+
 func setupTest(t *testing.T) (string, func()) {
 	// Create a temporary directory
 	tmpDir := t.TempDir()
 
 	// Initialize logger with minimal configuration
 	err := logger.Initialize(logger.Config{
-		Level:  "panic",
-		Format: "text",
+		Level:  logger.InfoLevel,
+		Format: logger.TextFormat,
 		Output: "discard",
 	})
 	require.NoError(t, err)
@@ -71,8 +80,15 @@ func TestGetDataHome(t *testing.T) {
 			name:        "EXO_DATA_HOME with tilde",
 			dataHome:    "~/custom/data/home",
 			xdgData:     "/should/not/use/this",
-			expected:    "~/custom/data/home",
-			description: "Should preserve tilde in EXO_DATA_HOME",
+			expected:    filepath.Join(tmpDir, "custom/data/home"),
+			description: "Should expand tilde in EXO_DATA_HOME",
+		},
+		{
+			name:        "EXO_DATA_HOME with relative path",
+			dataHome:    "custom/data/home",
+			xdgData:     "/should/not/use/this",
+			expected:    filepath.Join(tmpDir, "custom/data/home"),
+			description: "Should convert relative paths to absolute",
 		},
 		{
 			name:        "XDG_DATA_HOME set",
@@ -85,8 +101,15 @@ func TestGetDataHome(t *testing.T) {
 			name:        "XDG_DATA_HOME with tilde",
 			dataHome:    "",
 			xdgData:     "~/xdg/data",
-			expected:    filepath.Join("~/xdg/data", "exo"),
-			description: "Should preserve tilde in XDG_DATA_HOME",
+			expected:    filepath.Join(tmpDir, "xdg/data", "exo"),
+			description: "Should expand tilde in XDG_DATA_HOME",
+		},
+		{
+			name:        "XDG_DATA_HOME with relative path",
+			dataHome:    "",
+			xdgData:     "xdg/data",
+			expected:    filepath.Join(tmpDir, "xdg/data", "exo"),
+			description: "Should convert relative XDG paths to absolute",
 		},
 		{
 			name:        "no env vars set",
@@ -101,6 +124,7 @@ func TestGetDataHome(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			os.Setenv("EXO_DATA_HOME", tt.dataHome)
 			os.Setenv("XDG_DATA_HOME", tt.xdgData)
+			os.Setenv("HOME", tmpDir)
 
 			result := getDataHome(tmpDir)
 			assert.Equal(t, tt.expected, result, tt.description)
@@ -121,14 +145,18 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid config",
 			config: Config{
-				Editor:      defaultEditor,
-				DataHome:    "/data/home",
-				TemplateDir: "/template/dir",
-				PeriodicDir: "/periodic/dir",
-				ZettelDir:   "/zettel/dir",
+				General: GeneralConfig{
+					Editor: defaultEditor,
+				},
+				Dir: DirConfig{
+					DataHome:    "/data/home",
+					TemplateDir: "/template/dir",
+					PeriodicDir: "/periodic/dir",
+					ZettelDir:   "/zettel/dir",
+				},
 				Log: logger.Config{
-					Level:  defaultLogLevel,
-					Format: defaultLogFormat,
+					Level:  logger.InfoLevel,
+					Format: logger.TextFormat,
 					Output: defaultLogOutput,
 				},
 			},
@@ -138,10 +166,12 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "empty editor",
 			config: Config{
-				DataHome:    "/data/home",
-				TemplateDir: "/template/dir",
-				PeriodicDir: "/periodic/dir",
-				ZettelDir:   "/zettel/dir",
+				Dir: DirConfig{
+					DataHome:    "/data/home",
+					TemplateDir: "/template/dir",
+					PeriodicDir: "/periodic/dir",
+					ZettelDir:   "/zettel/dir",
+				},
 			},
 			expectError: true,
 			description: "Empty editor should return error",
@@ -149,10 +179,14 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "empty data home",
 			config: Config{
-				Editor:      defaultEditor,
-				TemplateDir: "/template/dir",
-				PeriodicDir: "/periodic/dir",
-				ZettelDir:   "/zettel/dir",
+				General: GeneralConfig{
+					Editor: defaultEditor,
+				},
+				Dir: DirConfig{
+					TemplateDir: "/template/dir",
+					PeriodicDir: "/periodic/dir",
+					ZettelDir:   "/zettel/dir",
+				},
 			},
 			expectError: true,
 			description: "Empty data_home should return error",
@@ -160,10 +194,14 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "empty template dir",
 			config: Config{
-				Editor:      defaultEditor,
-				DataHome:    "/data/home",
-				PeriodicDir: "/periodic/dir",
-				ZettelDir:   "/zettel/dir",
+				General: GeneralConfig{
+					Editor: defaultEditor,
+				},
+				Dir: DirConfig{
+					DataHome:    "/data/home",
+					PeriodicDir: "/periodic/dir",
+					ZettelDir:   "/zettel/dir",
+				},
 			},
 			expectError: true,
 			description: "Empty template_dir should return error",
@@ -171,10 +209,14 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "empty periodic dir",
 			config: Config{
-				Editor:      defaultEditor,
-				DataHome:    "/data/home",
-				TemplateDir: "/template/dir",
-				ZettelDir:   "/zettel/dir",
+				General: GeneralConfig{
+					Editor: defaultEditor,
+				},
+				Dir: DirConfig{
+					DataHome:    "/data/home",
+					TemplateDir: "/template/dir",
+					ZettelDir:   "/zettel/dir",
+				},
 			},
 			expectError: true,
 			description: "Empty periodic_dir should return error",
@@ -182,10 +224,14 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "empty zettel dir",
 			config: Config{
-				Editor:      defaultEditor,
-				DataHome:    "/data/home",
-				TemplateDir: "/template/dir",
-				PeriodicDir: "/periodic/dir",
+				General: GeneralConfig{
+					Editor: defaultEditor,
+				},
+				Dir: DirConfig{
+					DataHome:    "/data/home",
+					TemplateDir: "/template/dir",
+					PeriodicDir: "/periodic/dir",
+				},
 			},
 			expectError: true,
 			description: "Empty zettel_dir should return error",
@@ -193,11 +239,15 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "relative paths",
 			config: Config{
-				Editor:      defaultEditor,
-				DataHome:    "data/home",
-				TemplateDir: "template/dir",
-				PeriodicDir: "periodic/dir",
-				ZettelDir:   "zettel/dir",
+				General: GeneralConfig{
+					Editor: defaultEditor,
+				},
+				Dir: DirConfig{
+					DataHome:    "data/home",
+					TemplateDir: "template/dir",
+					PeriodicDir: "periodic/dir",
+					ZettelDir:   "zettel/dir",
+				},
 			},
 			expectError: false,
 			description: "Relative paths should be valid",
@@ -205,11 +255,15 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "paths with tilde",
 			config: Config{
-				Editor:      defaultEditor,
-				DataHome:    "~/data/home",
-				TemplateDir: "~/template/dir",
-				PeriodicDir: "~/periodic/dir",
-				ZettelDir:   "~/zettel/dir",
+				General: GeneralConfig{
+					Editor: defaultEditor,
+				},
+				Dir: DirConfig{
+					DataHome:    "~/data/home",
+					TemplateDir: "~/data/templates",
+					PeriodicDir: "~/data/periodic",
+					ZettelDir:   "~/data/zettel",
+				},
 			},
 			expectError: false,
 			description: "Paths with tilde should be valid",
@@ -233,26 +287,46 @@ func TestInitialize(t *testing.T) {
 		_, cleanup := setupTest(t)
 		defer cleanup()
 
+		// Reset the config instance before testing initialization
+		resetInstance()
+
+		// Initialize with empty config path should use defaults
 		err := Initialize("")
 		require.NoError(t, err, "Initialize should succeed with default values when config file doesn't exist")
 
+		// Verify the config was initialized
 		cfg, err := Get()
 		require.NoError(t, err, "Get should return the initialized config")
-		assert.Equal(t, defaultEditor, cfg.Editor, "Editor should have default value")
-		assert.NotEmpty(t, cfg.DataHome, "DataHome should not be empty")
+		require.NotNil(t, cfg, "Config should not be nil")
+
+		// Verify default values
+		assert.Equal(t, defaultEditor, cfg.General.Editor, "Editor should have default value")
+		assert.NotEmpty(t, cfg.Dir.DataHome, "DataHome should not be empty")
+		assert.True(t, strings.HasSuffix(cfg.Dir.DataHome, "exo"), "DataHome should end with 'exo'")
 	})
 
 	t.Run("initialize with invalid config file path", func(t *testing.T) {
 		_, cleanup := setupTest(t)
 		defer cleanup()
 
+		// Reset the config instance
+		resetInstance()
+
 		err := Initialize("/nonexistent/path/config.yaml")
 		assert.Error(t, err, "Initialize should fail with invalid config file path")
+
+		// Verify config is not initialized
+		cfg, err := Get()
+		assert.Error(t, err, "Get should return error when initialization failed")
+		assert.Nil(t, cfg, "Config should be nil when initialization failed")
 	})
 
 	t.Run("initialize with valid config file", func(t *testing.T) {
 		tmpDir, cleanup := setupTest(t)
 		defer cleanup()
+
+		// Reset the config instance
+		resetInstance()
 
 		// Create a valid config file
 		configDir := filepath.Join(tmpDir, ".config", "exo")
@@ -260,11 +334,16 @@ func TestInitialize(t *testing.T) {
 
 		configFile := filepath.Join(configDir, "config.yaml")
 		configContent := []byte(`
-editor: code
-data_home: /custom/data
-template_dir: /custom/templates
-periodic_dir: /custom/periodic
-zettel_dir: /custom/zettel
+general:
+  editor: code
+dir:
+  data_home: ~/data
+  template_dir: ~/data/templates
+  periodic_dir: ~/data/periodic
+  zettel_dir: ~/data/zettel
+  projects_dir: ~/data/projects
+  inbox_dir: ~/data/0-inbox
+  idea_dir: ~/data/ideas
 log:
   level: debug
   format: json
@@ -277,32 +356,47 @@ log:
 
 		cfg, err := Get()
 		require.NoError(t, err, "Get should return the initialized config")
-		assert.Equal(t, "code", cfg.Editor, "Editor should be loaded from config")
-		assert.Equal(t, "/custom/data", cfg.DataHome, "DataHome should be loaded from config")
-		assert.Equal(t, "debug", cfg.Log.Level, "Log level should be loaded from config")
+		require.NotNil(t, cfg, "Config should not be nil")
+
+		// Verify loaded values
+		assert.Equal(t, "code", cfg.General.Editor, "Editor should be loaded from config")
+		assert.Equal(t, filepath.Join(tmpDir, "data"), cfg.Dir.DataHome, "DataHome should be loaded from config")
+		assert.Equal(t, "debug", string(cfg.Log.Level), "Log level should be loaded from config")
 	})
 
 	t.Run("initialize with invalid config content", func(t *testing.T) {
-		tmpDir, cleanup := setupTest(t)
+		_, cleanup := setupTest(t)
 		defer cleanup()
 
+		// Reset the config instance
+		resetInstance()
+
 		// Create an invalid config file
-		configDir := filepath.Join(tmpDir, ".config", "exo")
+		configDir := filepath.Join(os.TempDir(), ".config", "exo")
 		require.NoError(t, os.MkdirAll(configDir, 0755))
 
 		configFile := filepath.Join(configDir, "config.yaml")
 		configContent := []byte(`
-editor: [invalid, yaml]
+general:
+  editor: [invalid, yaml]
 `)
 		require.NoError(t, os.WriteFile(configFile, configContent, 0644))
 
 		err := Initialize(configFile)
 		assert.Error(t, err, "Initialize should fail with invalid config content")
+
+		// Verify config is not initialized
+		cfg, err := Get()
+		assert.Error(t, err, "Get should return error when initialization failed")
+		assert.Nil(t, cfg, "Config should be nil when initialization failed")
 	})
 
 	t.Run("initialize twice", func(t *testing.T) {
 		_, cleanup := setupTest(t)
 		defer cleanup()
+
+		// Reset the config instance
+		resetInstance()
 
 		// First initialization
 		err1 := Initialize("")
@@ -311,6 +405,7 @@ editor: [invalid, yaml]
 		// Get the first instance
 		cfg1, err := Get()
 		require.NoError(t, err, "Get should return the first initialized config")
+		require.NotNil(t, cfg1, "First config should not be nil")
 
 		// Second initialization
 		err2 := Initialize("")
@@ -319,6 +414,7 @@ editor: [invalid, yaml]
 		// Get the second instance
 		cfg2, err := Get()
 		require.NoError(t, err, "Get should return the same config")
+		require.NotNil(t, cfg2, "Second config should not be nil")
 
 		// Compare instances
 		assert.Equal(t, cfg1, cfg2, "Multiple initializations should return the same instance")
@@ -328,17 +424,25 @@ editor: [invalid, yaml]
 		tmpDir, cleanup := setupTest(t)
 		defer cleanup()
 
+		// Reset the config instance
+		resetInstance()
+
 		// Create a valid config file with tilde paths
 		configDir := filepath.Join(tmpDir, ".config", "exo")
 		require.NoError(t, os.MkdirAll(configDir, 0755))
 
 		configFile := filepath.Join(configDir, "config.yaml")
 		configContent := []byte(`
-editor: code
-data_home: ~/data
-template_dir: ~/.config/exo/templates
-periodic_dir: ~/notes/periodic
-zettel_dir: ~/notes/zettel
+general:
+  editor: code
+dir:
+  data_home: ~/data
+  template_dir: ~/data/templates
+  periodic_dir: ~/data/periodic
+  zettel_dir: ~/data/zettel
+  projects_dir: ~/data/projects
+  inbox_dir: ~/data/0-inbox
+  idea_dir: ~/data/ideas
 log:
   level: debug
   format: json
@@ -351,53 +455,15 @@ log:
 
 		cfg, err := Get()
 		require.NoError(t, err, "Get should return the initialized config")
+		require.NotNil(t, cfg, "Config should not be nil")
 
 		// Check that paths are expanded
 		home := tmpDir // In our test environment, HOME is set to tmpDir
-		assert.Equal(t, filepath.Join(home, "data"), cfg.DataHome, "DataHome should have expanded tilde")
-		assert.Equal(t, filepath.Join(home, ".config/exo/templates"), cfg.TemplateDir, "TemplateDir should have expanded tilde")
-		assert.Equal(t, filepath.Join(home, "notes/periodic"), cfg.PeriodicDir, "PeriodicDir should have expanded tilde")
-		assert.Equal(t, filepath.Join(home, "notes/zettel"), cfg.ZettelDir, "ZettelDir should have expanded tilde")
+		assert.Equal(t, filepath.Join(home, "data"), cfg.Dir.DataHome, "DataHome should have expanded tilde")
+		assert.Equal(t, filepath.Join(home, "data/templates"), cfg.Dir.TemplateDir, "TemplateDir should have expanded tilde")
+		assert.Equal(t, filepath.Join(home, "data/periodic"), cfg.Dir.PeriodicDir, "PeriodicDir should have expanded tilde")
+		assert.Equal(t, filepath.Join(home, "data/zettel"), cfg.Dir.ZettelDir, "ZettelDir should have expanded tilde")
 	})
-}
-
-func TestGetDefaults(t *testing.T) {
-	tests := []struct {
-		name     string
-		dataHome string
-	}{
-		{
-			name:     "absolute_paths",
-			dataHome: "/test/data",
-		},
-		{
-			name:     "relative_paths",
-			dataHome: "test/data",
-		},
-		{
-			name:     "paths_with_tilde",
-			dataHome: "~/test/data",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			defaults := getDefaults(tt.dataHome)
-
-			// Check basic values
-			assert.Equal(t, defaultEditor, defaults["editor"])
-			assert.Equal(t, tt.dataHome, defaults["data_home"])
-			assert.Equal(t, filepath.Join(tt.dataHome, "templates"), defaults["template_dir"])
-			assert.Equal(t, filepath.Join(tt.dataHome, "periodic"), defaults["periodic_dir"])
-			assert.Equal(t, filepath.Join(tt.dataHome, "zettel"), defaults["zettel_dir"])
-
-			// Check log configuration
-			logConfig := defaults["log"].(map[string]interface{})
-			assert.Equal(t, defaultLogLevel, logConfig["level"])
-			assert.Equal(t, defaultLogFormat, logConfig["format"])
-			assert.Equal(t, defaultLogOutput, logConfig["output"])
-		})
-	}
 }
 
 func TestGet(t *testing.T) {
@@ -430,20 +496,19 @@ func TestGet(t *testing.T) {
 		require.NoError(t, err, "Initialize should succeed")
 
 		// Run multiple goroutines accessing the config
-		done := make(chan bool)
+		var wg sync.WaitGroup
 		for i := 0; i < 10; i++ {
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				cfg, err := Get()
 				assert.NoError(t, err)
 				assert.NotNil(t, cfg)
-				done <- true
 			}()
 		}
 
 		// Wait for all goroutines to complete
-		for i := 0; i < 10; i++ {
-			<-done
-		}
+		wg.Wait()
 	})
 }
 
@@ -478,20 +543,340 @@ func TestMustGet(t *testing.T) {
 		require.NoError(t, err, "Initialize should succeed")
 
 		// Run multiple goroutines accessing the config
-		done := make(chan bool)
+		var wg sync.WaitGroup
 		for i := 0; i < 10; i++ {
+			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				assert.NotPanics(t, func() {
 					cfg := MustGet()
 					assert.NotNil(t, cfg)
 				})
-				done <- true
 			}()
 		}
 
 		// Wait for all goroutines to complete
-		for i := 0; i < 10; i++ {
-			<-done
+		wg.Wait()
+	})
+}
+
+func TestConfig_Save(t *testing.T) {
+	t.Run("save new config", func(t *testing.T) {
+		tmpDir, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Initialize with default config
+		err := Initialize("")
+		require.NoError(t, err)
+
+		cfg := MustGet()
+		cfg.General.Editor = "test-editor"
+		cfg.Log.Level = logger.DebugLevel
+
+		// Save the config
+		err = cfg.Save()
+		require.NoError(t, err)
+
+		// Verify the config file was created
+		configPath := filepath.Join(tmpDir, ".config", "exo", "config.yaml")
+		_, err = os.Stat(configPath)
+		assert.NoError(t, err)
+
+		// Read the saved config
+		content, err := os.ReadFile(configPath)
+		require.NoError(t, err)
+
+		// Verify content
+		assert.Contains(t, string(content), "test-editor")
+		assert.Contains(t, string(content), "debug")
+	})
+
+	t.Run("save with invalid permissions", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("Skipping test when running as root")
+		}
+
+		tmpDir, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Create config directory with read-only permissions
+		configDir := filepath.Join(tmpDir, ".config", "exo")
+		require.NoError(t, os.MkdirAll(filepath.Dir(configDir), 0755))
+		require.NoError(t, os.Mkdir(configDir, 0555))
+
+		err := Initialize("")
+		require.NoError(t, err)
+
+		cfg := MustGet()
+		err = cfg.Save()
+		assert.Error(t, err)
+	})
+}
+
+func TestSanitizePath(t *testing.T) {
+	tmpDir, cleanup := setupTest(t)
+	defer cleanup()
+
+	tests := []struct {
+		name     string
+		path     string
+		expected string
+	}{
+		{
+			name:     "absolute path",
+			path:     "/absolute/path",
+			expected: "/absolute/path",
+		},
+		{
+			name:     "relative path",
+			path:     "relative/path",
+			expected: filepath.Join(tmpDir, "relative/path"),
+		},
+		{
+			name:     "path with tilde",
+			path:     "~/some/path",
+			expected: filepath.Join(tmpDir, "some/path"),
+		},
+		{
+			name:     "path with dot",
+			path:     "./current/path",
+			expected: filepath.Join(tmpDir, "current/path"),
+		},
+		{
+			name:     "path with parent directory",
+			path:     "../parent/path",
+			expected: filepath.Join(filepath.Dir(tmpDir), "parent/path"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizePath(tt.path, tmpDir)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestEnsureDirectories(t *testing.T) {
+	t.Run("create new directories", func(t *testing.T) {
+		tmpDir, cleanup := setupTest(t)
+		defer cleanup()
+
+		paths := []string{
+			filepath.Join(tmpDir, "dir1"),
+			filepath.Join(tmpDir, "dir2", "subdir"),
+			filepath.Join(tmpDir, "dir3", "subdir", "subsubdir"),
+		}
+
+		err := ensureDirectories(paths...)
+		require.NoError(t, err)
+
+		// Verify directories were created
+		for _, path := range paths {
+			info, err := os.Stat(path)
+			require.NoError(t, err)
+			assert.True(t, info.IsDir())
+			assert.Equal(t, os.FileMode(0755), info.Mode().Perm())
+		}
+	})
+
+	t.Run("ensure existing directories", func(t *testing.T) {
+		tmpDir, cleanup := setupTest(t)
+		defer cleanup()
+
+		path := filepath.Join(tmpDir, "existing")
+		require.NoError(t, os.MkdirAll(path, 0755))
+
+		err := ensureDirectories(path)
+		assert.NoError(t, err)
+	})
+
+	t.Run("permission denied", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("Skipping test when running as root")
+		}
+
+		tmpDir, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Create a read-only parent directory
+		parent := filepath.Join(tmpDir, "readonly")
+		require.NoError(t, os.MkdirAll(parent, 0555))
+
+		path := filepath.Join(parent, "newdir")
+		err := ensureDirectories(path)
+		assert.Error(t, err)
+	})
+}
+
+func TestEnvironmentOverrides(t *testing.T) {
+	t.Run("environment variables override defaults", func(t *testing.T) {
+		_, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Set environment variables
+		os.Setenv("EDITOR", "custom-editor")
+		os.Setenv("EXO_DATA_HOME", "/custom/data/home")
+		os.Setenv("XDG_DATA_HOME", "/custom/xdg/data")
+
+		err := Initialize("")
+		require.NoError(t, err)
+
+		cfg := MustGet()
+		assert.Equal(t, "custom-editor", cfg.General.Editor)
+		assert.Equal(t, "/custom/data/home", cfg.Dir.DataHome)
+	})
+
+	t.Run("EXO_DATA_HOME takes precedence over XDG_DATA_HOME", func(t *testing.T) {
+		_, cleanup := setupTest(t)
+		defer cleanup()
+
+		os.Setenv("EXO_DATA_HOME", "/exo/data")
+		os.Setenv("XDG_DATA_HOME", "/xdg/data")
+
+		err := Initialize("")
+		require.NoError(t, err)
+
+		cfg := MustGet()
+		assert.Equal(t, "/exo/data", cfg.Dir.DataHome)
+	})
+
+	t.Run("XDG_DATA_HOME used when EXO_DATA_HOME not set", func(t *testing.T) {
+		_, cleanup := setupTest(t)
+		defer cleanup()
+
+		os.Setenv("EXO_DATA_HOME", "")
+		os.Setenv("XDG_DATA_HOME", "/xdg/data")
+
+		err := Initialize("")
+		require.NoError(t, err)
+
+		cfg := MustGet()
+		assert.Equal(t, filepath.Join("/xdg/data", "exo"), cfg.Dir.DataHome)
+	})
+}
+
+func TestDefaultConfig(t *testing.T) {
+	t.Run("default values are set correctly", func(t *testing.T) {
+		tmpDir, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Set HOME to ensure consistent test environment
+		os.Setenv("HOME", tmpDir)
+		defaults := defaultConfig()
+
+		assert.Equal(t, defaultEditor, defaults["general.editor"])
+		assert.Equal(t, defaultLogLevel, defaults["log.level"])
+		assert.Equal(t, defaultLogFormat, defaults["log.format"])
+		assert.Equal(t, defaultLogOutput, defaults["log.output"])
+
+		// Check directory defaults
+		expectedDataHome := filepath.Join(filepath.Join(tmpDir, defaultXDGData), "exo")
+		assert.Equal(t, expectedDataHome, defaults["dir.data_home"])
+		assert.Equal(t, filepath.Join(expectedDataHome, "templates"), defaults["dir.template_dir"])
+		assert.Equal(t, filepath.Join(expectedDataHome, "periodic"), defaults["dir.periodic_dir"])
+		assert.Equal(t, filepath.Join(expectedDataHome, "zettel"), defaults["dir.zettel_dir"])
+		assert.Equal(t, filepath.Join(expectedDataHome, "projects"), defaults["dir.projects_dir"])
+		assert.Equal(t, filepath.Join(expectedDataHome, "0-inbox"), defaults["dir.inbox_dir"])
+		assert.Equal(t, filepath.Join(expectedDataHome, "ideas"), defaults["dir.idea_dir"])
+	})
+
+	t.Run("data_home uses XDG_DATA_HOME", func(t *testing.T) {
+		tmpDir, cleanup := setupTest(t)
+		defer cleanup()
+
+		customXDGPath := filepath.Join(tmpDir, "custom/xdg/data")
+		os.Setenv("XDG_DATA_HOME", customXDGPath)
+		defaults := defaultConfig()
+
+		assert.Equal(t, filepath.Join(customXDGPath, "exo"), defaults["dir.data_home"])
+	})
+}
+
+func TestConfigValidationWithPaths(t *testing.T) {
+	t.Run("validate paths with special characters", func(t *testing.T) {
+		tmpDir, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Create test directories to ensure they exist
+		testDirs := []string{
+			filepath.Join(tmpDir, "data home with spaces"),
+			filepath.Join(tmpDir, "template-dir-with-dashes"),
+			filepath.Join(tmpDir, "periodic_dir_with_underscores"),
+			filepath.Join(tmpDir, "zettel.dir.with.dots"),
+		}
+
+		for _, dir := range testDirs {
+			require.NoError(t, os.MkdirAll(dir, 0755))
+		}
+
+		cfg := &Config{
+			General: GeneralConfig{
+				Editor: defaultEditor,
+			},
+			Dir: DirConfig{
+				DataHome:    testDirs[0],
+				TemplateDir: testDirs[1],
+				PeriodicDir: testDirs[2],
+				ZettelDir:   testDirs[3],
+			},
+			Log: logger.Config{
+				Level:  logger.InfoLevel,
+				Format: logger.TextFormat,
+				Output: defaultLogOutput,
+			},
+		}
+
+		err := cfg.Validate()
+		assert.NoError(t, err)
+
+		// Verify directories exist and are accessible
+		for _, dir := range testDirs {
+			_, err := os.Stat(dir)
+			assert.NoError(t, err)
+		}
+	})
+
+	t.Run("validate paths with unicode characters", func(t *testing.T) {
+		tmpDir, cleanup := setupTest(t)
+		defer cleanup()
+
+		// Create test directories with unicode names
+		testDirs := []string{
+			filepath.Join(tmpDir, "数据"),
+			filepath.Join(tmpDir, "模板"),
+			filepath.Join(tmpDir, "периодический"),
+			filepath.Join(tmpDir, "zettel"),
+		}
+
+		for _, dir := range testDirs {
+			require.NoError(t, os.MkdirAll(dir, 0755))
+		}
+
+		cfg := &Config{
+			General: GeneralConfig{
+				Editor: defaultEditor,
+			},
+			Dir: DirConfig{
+				DataHome:    testDirs[0],
+				TemplateDir: testDirs[1],
+				PeriodicDir: testDirs[2],
+				ZettelDir:   testDirs[3],
+			},
+			Log: logger.Config{
+				Level:  logger.InfoLevel,
+				Format: logger.TextFormat,
+				Output: defaultLogOutput,
+			},
+		}
+
+		err := cfg.Validate()
+		assert.NoError(t, err)
+
+		// Verify unicode directories exist and are accessible
+		for _, dir := range testDirs {
+			_, err := os.Stat(dir)
+			assert.NoError(t, err)
 		}
 	})
 }
