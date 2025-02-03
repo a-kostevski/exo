@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/a-kostevski/exo/pkg/fs"
 	"github.com/a-kostevski/exo/pkg/logger"
-	"github.com/a-kostevski/exo/pkg/utils"
 )
 
 // DailyNavigator implements period navigation for daily notes
@@ -43,7 +43,7 @@ func NewDailyNote(date time.Time) (*DailyNote, error) {
 
 	note := &DailyNote{PeriodicNote: daily}
 
-	if !utils.FileExists(note.Path()) {
+	if !fs.FileExists(note.Path()) {
 		logger.Info("Initializing new daily note content",
 			logger.Field{Key: "path", Value: note.Path()})
 		if err := note.initializeContent(date); err != nil {

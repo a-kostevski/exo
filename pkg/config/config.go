@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/a-kostevski/exo/pkg/fs"
 	"github.com/a-kostevski/exo/pkg/logger"
-	"github.com/a-kostevski/exo/pkg/utils"
 	"github.com/spf13/viper"
 )
 
@@ -180,7 +180,7 @@ func getDataHome(home string) string {
 		return sanitizePath(dataHome, home)
 	}
 
-	xdgData := utils.GetXDGDataHome()
+	xdgData := fs.GetXDGDataHome()
 	if xdgData == "" {
 		xdgData = filepath.Join(home, defaultXDGData)
 	} else {
@@ -192,7 +192,7 @@ func getDataHome(home string) string {
 
 // sanitizePath cleans and normalizes the provided path
 func sanitizePath(path, home string) string {
-	expanded := utils.ExpandPath(path)
+	expanded := fs.ExpandPath(path)
 	cleaned := filepath.Clean(expanded)
 	if !filepath.IsAbs(cleaned) {
 		cleaned = filepath.Join(home, cleaned)

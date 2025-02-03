@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/a-kostevski/exo/pkg/fs"
 	"github.com/a-kostevski/exo/pkg/logger"
-	"github.com/a-kostevski/exo/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -331,7 +331,7 @@ func TestInitialize(t *testing.T) {
 
 		// Create a valid config file
 		configDir := filepath.Join(tmpDir, ".config", "exo")
-		require.NoError(t, utils.EnsureDirectories(configDir))
+		require.NoError(t, fs.EnsureDirectories(configDir))
 
 		configFile := filepath.Join(configDir, "config.yaml")
 		configContent := []byte(`
@@ -350,7 +350,7 @@ log:
   format: json
   output: stdout
 `)
-		require.NoError(t, utils.WriteFile(configFile, configContent))
+		require.NoError(t, fs.WriteFile(configFile, configContent))
 
 		err := Initialize(configFile)
 		require.NoError(t, err, "Initialize should succeed with valid config file")
@@ -374,14 +374,14 @@ log:
 
 		// Create an invalid config file
 		configDir := filepath.Join(os.TempDir(), ".config", "exo")
-		require.NoError(t, utils.EnsureDirectories(configDir))
+		require.NoError(t, fs.EnsureDirectories(configDir))
 
 		configFile := filepath.Join(configDir, "config.yaml")
 		configContent := []byte(`
 general:
   editor: [invalid, yaml]
 `)
-		require.NoError(t, utils.WriteFile(configFile, configContent))
+		require.NoError(t, fs.WriteFile(configFile, configContent))
 
 		err := Initialize(configFile)
 		assert.Error(t, err, "Initialize should fail with invalid config content")
@@ -430,7 +430,7 @@ general:
 
 		// Create a valid config file with tilde paths
 		configDir := filepath.Join(tmpDir, ".config", "exo")
-		require.NoError(t, utils.EnsureDirectories(configDir))
+		require.NoError(t, fs.EnsureDirectories(configDir))
 
 		configFile := filepath.Join(configDir, "config.yaml")
 		configContent := []byte(`
@@ -449,7 +449,7 @@ log:
   format: json
   output: stdout
 `)
-		require.NoError(t, utils.WriteFile(configFile, configContent))
+		require.NoError(t, fs.WriteFile(configFile, configContent))
 
 		err := Initialize(configFile)
 		require.NoError(t, err, "Initialize should succeed with tilde paths")
@@ -584,7 +584,7 @@ func TestConfig_Save(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Read the saved config
-		content, err := utils.ReadFile(configPath)
+		content, err := fs.ReadFile(configPath)
 		require.NoError(t, err)
 
 		// Verify content
@@ -665,7 +665,7 @@ func TestConfigValidationWithPaths(t *testing.T) {
 		}
 
 		for _, dir := range testDirs {
-			require.NoError(t, utils.EnsureDirectories(dir))
+			require.NoError(t, fs.EnsureDirectories(dir))
 		}
 
 		cfg := &Config{
@@ -708,7 +708,7 @@ func TestConfigValidationWithPaths(t *testing.T) {
 		}
 
 		for _, dir := range testDirs {
-			require.NoError(t, utils.EnsureDirectories(dir))
+			require.NoError(t, fs.EnsureDirectories(dir))
 		}
 
 		cfg := &Config{

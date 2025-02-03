@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 
 	"github.com/a-kostevski/exo/pkg/config"
+	"github.com/a-kostevski/exo/pkg/fs"
 	"github.com/a-kostevski/exo/pkg/logger"
-	"github.com/a-kostevski/exo/pkg/utils"
 )
 
 // Save saves the note content to disk
@@ -138,7 +138,7 @@ func (n *BaseNote) Open() error {
 		return fmt.Errorf("note file does not exist: %s", n.path)
 	}
 	cfg := config.MustGet()
-	if err := utils.OpenInEditor(n.path, cfg.General.Editor); err != nil {
+	if err := fs.OpenInEditor(n.path, cfg.General.Editor); err != nil {
 		logger.Error("Failed to open note in editor",
 			logger.Field{Key: "error", Value: err},
 			logger.Field{Key: "id", Value: n.id},

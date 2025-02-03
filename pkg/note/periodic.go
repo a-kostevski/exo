@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/a-kostevski/exo/pkg/fs"
 	"github.com/a-kostevski/exo/pkg/logger"
-	"github.com/a-kostevski/exo/pkg/utils"
 )
 
 // PeriodType represents the type of periodic note
@@ -215,7 +215,7 @@ func (n *PeriodicNote) Load() error {
 	}
 
 	// Check if file exists
-	if !utils.FileExists(n.Path()) {
+	if !fs.FileExists(n.Path()) {
 		logger.Error("Note file does not exist",
 			logger.Field{Key: "title", Value: n.Title()},
 			logger.Field{Key: "path", Value: n.Path()})

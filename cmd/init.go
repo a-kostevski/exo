@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"github.com/a-kostevski/exo/pkg/config"
+	"github.com/a-kostevski/exo/pkg/fs"
 	"github.com/a-kostevski/exo/pkg/logger"
 	"github.com/a-kostevski/exo/pkg/templates"
-	"github.com/a-kostevski/exo/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -60,7 +60,7 @@ func ensureDirectories(cfg *config.Config) error {
 	}
 
 	for _, dir := range dirs {
-		if err := utils.EnsureDirectoryExists(dir); err != nil {
+		if err := fs.EnsureDirectoryExists(dir); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 		logger.Info("Created directory", logger.Field{Key: "path", Value: dir})

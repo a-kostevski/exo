@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/a-kostevski/exo/pkg/utils"
+	"github.com/a-kostevski/exo/pkg/fs"
 )
 
 // ZettelNote represents a Zettelkasten note
@@ -14,7 +14,7 @@ type ZettelNote struct {
 
 // NewZetNote creates a new Zettelkasten note
 func NewZetNote(title string, opts ...NoteOption) (*ZettelNote, error) {
-	fileName := utils.SanitizeFileName(title) + ".md"
+	fileName := fs.SanitizeFileName(title) + ".md"
 
 	baseNote, err := NewBaseNote(title,
 		WithFileName(fileName),
