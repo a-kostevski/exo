@@ -88,6 +88,17 @@ var (
 	mu            sync.RWMutex
 )
 
+func Default() Logger {
+	if defaultLogger == nil {
+		// Initialize with basic configuration
+		defaultLogger = &zapLogger{
+			logger: zap.NewExample(),
+			ctx:    context.Background(),
+		}
+	}
+	return defaultLogger
+}
+
 // Initialize sets up the logger with the given configuration
 func Initialize(cfg Config) error {
 	var err error

@@ -11,6 +11,9 @@ type NoteFS interface {
 	Save() error
 	Load() error
 	Delete() error
+}
+
+type Editor interface {
 	Open() error
 }
 
@@ -28,6 +31,7 @@ type NoteValidator interface {
 type Note interface {
 	NoteContentManager
 	NoteFS
+	Editor
 	Metadata
 	NoteValidator
 	String() string

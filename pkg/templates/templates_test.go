@@ -7,71 +7,128 @@ import (
 	"testing"
 	"time"
 
+	"github.com/a-kostevski/exo/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func setupTest(t *testing.T) string {
-	return t.TempDir()
+// Mock logger for testing
+// mockLogger implements Logger interface for testing
+type mockLogger struct {
+	t *testing.T // optional, for test assertions
+}
+
+func newMockLogger(t *testing.T) *mockLogger {
+	return &mockLogger{t: t}
+}
+
+// Basic logging methods
+func (m *mockLogger) Debug(msg string, fields ...logger.Field) {}
+func (m *mockLogger) Info(msg string, fields ...logger.Field)  {}
+func (m *mockLogger) Warn(msg string, fields ...logger.Field)  {}
+func (m *mockLogger) Error(msg string, fields ...logger.Field) {}
+func (m *mockLogger) Fatal(msg string, fields ...logger.Field) {
+	if m.t != nil {
+		m.t.Fatal(msg)
+	}
+}
+
+// Format logging methods
+func (m *mockLogger) Debugf(format string, args ...interface{}) {}
+func (m *mockLogger) Infof(format string, args ...interface{})  {}
+func (m *mockLogger) Warnf(format string, args ...interface{})  {}
+func (m *mockLogger) Errorf(format string, args ...interface{}) {}
+func (m *mockLogger) Fatalf(format string, args ...interface{}) {
+	if m.t != nil {
+		m.t.Fatalf(format, args...)
+	}
+}
+
+// Contextual logging methods
+func (m *mockLogger) With(fields ...logger.Field) logger.Logger {
+	return m
+}
+
+func (m *mockLogger) WithContext(ctx context.Context) logger.Logger {
+	return m
+}
+
+func setupTestConfig(t *testing.T) TemplateConfig {
+	return TemplateConfig{
+		TemplateDir:       t.TempDir(),
+		TemplateExtension: ".md",
+		Logger:            &mockLogger{},
+		FilePermissions:   0644,
+	}
 }
 
 func TestNewTemplateManager(t *testing.T) {
 	tests := []struct {
-		name        string
-		templateDir string
-		opts        []TemplateManagerOption
-		wantErr     bool
-		errMsg      string
+		name    string
+		config  TemplateConfig
+		opts    []TemplateManagerOption
+		wantErr bool
+		errMsg  string
 	}{
 		{
-			name:        "valid directory",
-			templateDir: setupTest(t),
-			opts:        nil,
-			wantErr:     false,
-		},
-		{
-			name:        "with custom extension",
-			templateDir: setupTest(t),
-			opts: []TemplateManagerOption{
-				WithTemplateExtension(".txt"),
-			},
+			name:    "valid config",
+			config:  setupTestConfig(t),
 			wantErr: false,
 		},
 		{
-			name:        "empty directory",
-			templateDir: "",
-			opts:        nil,
-			wantErr:     true,
-			errMsg:      "template directory cannot be empty",
+			name: "with custom extension",
+			config: func() TemplateConfig {
+				cfg := setupTestConfig(t)
+				cfg.TemplateExtension = ".txt"
+				return cfg
+			}(),
+			wantErr: false,
+		},
+		{
+			name: "missing logger",
+			config: TemplateConfig{
+				TemplateDir: t.TempDir(),
+			},
+			wantErr: true,
+			errMsg:  "logger is required",
+		},
+		{
+			name: "empty directory",
+			config: TemplateConfig{
+				Logger: newMockLogger(t),
+				// TemplateDir is intentionally empty
+			},
+			wantErr: true,
+			errMsg:  "template directory is required",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tm, err := NewTemplateManager(tt.templateDir, tt.opts...)
+			tm, err := NewTemplateManager(tt.config, tt.opts...)
 			if tt.wantErr {
-				assert.Error(t, err)
-				assert.Nil(t, tm)
+				require.Error(t, err)
+				require.Nil(t, tm)
 				if tt.errMsg != "" {
 					assert.Contains(t, err.Error(), tt.errMsg)
 				}
 				return
 			}
-			assert.NoError(t, err)
-			assert.NotNil(t, tm)
-			assert.Equal(t, tt.templateDir, tm.config.TemplateDir)
+			require.NoError(t, err)
+			require.NotNil(t, tm)
+			assert.Equal(t, tt.config.TemplateDir, tm.config.TemplateDir)
 		})
 	}
 }
 
 func TestTemplateManager_ProcessTemplate(t *testing.T) {
-	tmpDir := setupTest(t)
-	tm, err := NewTemplateManager(tmpDir)
+	config := setupTestConfig(t)
+	tm, err := NewTemplateManager(config)
 	require.NoError(t, err)
 
 	// Create a custom template
 	customTemplate := "# Custom Note {{.Title}}\n\nContent: {{.Content}}"
-	err = os.WriteFile(filepath.Join(tmpDir, "custom.md"), []byte(customTemplate), tm.config.FilePermissions)
+	err = os.WriteFile(filepath.Join(config.TemplateDir, "custom.md"), []byte(customTemplate), config.FilePermissions)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -136,13 +193,12 @@ func TestTemplateManager_ProcessTemplate(t *testing.T) {
 }
 
 func TestTemplateManager_LoadTemplate(t *testing.T) {
-	tmpDir := setupTest(t)
-	tm, err := NewTemplateManager(tmpDir)
+	config := setupTestConfig(t)
+	tm, err := NewTemplateManager(config)
 	require.NoError(t, err)
 
-	// Create a test template
 	testTemplate := "# Test Template"
-	err = os.WriteFile(filepath.Join(tmpDir, "test.md"), []byte(testTemplate), tm.config.FilePermissions)
+	err = os.WriteFile(filepath.Join(config.TemplateDir, "test.md"), []byte(testTemplate), config.FilePermissions)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -184,20 +240,19 @@ func TestTemplateManager_LoadTemplate(t *testing.T) {
 }
 
 func TestTemplateManager_ListTemplates(t *testing.T) {
-	tmpDir := setupTest(t)
-	tm, err := NewTemplateManager(tmpDir)
+	config := setupTestConfig(t)
+	tm, err := NewTemplateManager(config)
 	require.NoError(t, err)
 
-	// Create test templates
 	templates := map[string]string{
 		"test1": "# Test Template 1",
 		"test2": "# Test Template 2",
 	}
 	for name, content := range templates {
 		err = os.WriteFile(
-			filepath.Join(tmpDir, name+tm.config.TemplateExtension),
+			filepath.Join(config.TemplateDir, name+config.TemplateExtension),
 			[]byte(content),
-			tm.config.FilePermissions,
+			config.FilePermissions,
 		)
 		require.NoError(t, err)
 	}
@@ -212,13 +267,12 @@ func TestTemplateManager_ListTemplates(t *testing.T) {
 }
 
 func TestTemplateOverrides(t *testing.T) {
-	tmpDir := setupTest(t)
-	tm, err := NewTemplateManager(tmpDir)
+	config := setupTestConfig(t)
+	tm, err := NewTemplateManager(config)
 	require.NoError(t, err)
 
-	// Create a custom template that overrides a default one
 	customTemplate := "# Custom Template {{.Title}}"
-	err = os.WriteFile(filepath.Join(tmpDir, "note.md"), []byte(customTemplate), tm.config.FilePermissions)
+	err = os.WriteFile(filepath.Join(config.TemplateDir, "note.md"), []byte(customTemplate), config.FilePermissions)
 	require.NoError(t, err)
 
 	data := struct {

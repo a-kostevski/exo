@@ -104,7 +104,12 @@ func (n *BaseNote) ApplyTemplate(data interface{}) error {
 	}
 
 	cfg := config.MustGet()
-	tm, err := templates.NewTemplateManager(cfg.Dir.TemplateDir)
+	tm, err := templates.NewTemplateManager(templates.TemplateConfig{
+		TemplateDir:       cfg.Dir.TemplateDir,
+		TemplateExtension: ".md",
+		Logger:            logger.Default(), // Add a way to get default logger
+		FilePermissions:   0644,
+	})
 	if err != nil {
 		logger.Error("Failed to create template manager",
 			logger.Field{Key: "error", Value: err},

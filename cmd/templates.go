@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/a-kostevski/exo/pkg/config"
+	"github.com/a-kostevski/exo/pkg/logger"
 	"github.com/a-kostevski/exo/pkg/templates"
 	"github.com/spf13/cobra"
 )
@@ -20,10 +21,12 @@ var templateCmd = cobra.Command{
 			return fmt.Errorf("failed to get configuration: %w", err)
 		}
 
-		tm, err := templates.NewTemplateManager(cfg.Dir.TemplateDir)
-		if err != nil {
-			return fmt.Errorf("failed to create template manager: %w", err)
-		}
+		tm, err := templates.NewTemplateManager(templates.TemplateConfig{
+			TemplateDir:       cfg.Dir.TemplateDir,
+			TemplateExtension: ".md",
+			Logger:            logger.Default(), // Add a way to get default logger
+			FilePermissions:   0644,
+		})
 
 		templates, err := tm.ListTemplates()
 		if err != nil {
