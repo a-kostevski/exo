@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/a-kostevski/exo/internal/utils"
+	"github.com/a-kostevski/exo/pkg/utils"
 )
 
 // ZettelNote represents a Zettelkasten note

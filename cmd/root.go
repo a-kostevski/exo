@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/a-kostevski/exo/internal/config"
-	"github.com/a-kostevski/exo/internal/logger"
+	"github.com/a-kostevski/exo/pkg/config"
+	"github.com/a-kostevski/exo/pkg/logger"
 	"github.com/spf13/cobra"
 )
 

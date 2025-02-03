@@ -10,7 +10,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/a-kostevski/exo/internal/logger"
+	"github.com/a-kostevski/exo/pkg/logger"
 )
 
 type TemplateManager interface {
@@ -147,6 +147,7 @@ func (tm *DefaultTemplateManager) ProcessTemplate(name string, data interface{})
 		logger.Field{Key: "name", Value: name})
 	return buf.String(), nil
 }
+
 func (tm *DefaultTemplateManager) ProcessTemplateWithContext(ctx context.Context, name string, data interface{}) (string, error) {
 	logger.Debug("Processing template with context",
 		logger.Field{Key: "name", Value: name})
@@ -218,6 +219,7 @@ func (tm *DefaultTemplateManager) LoadTemplate(name string) (string, error) {
 		logger.Field{Key: "path", Value: path})
 	return string(content), nil
 }
+
 func (tm *DefaultTemplateManager) ListTemplates() ([]string, error) {
 	logger.Debug("Listing templates")
 

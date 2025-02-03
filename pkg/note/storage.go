@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/a-kostevski/exo/internal/config"
-	"github.com/a-kostevski/exo/internal/logger"
-	"github.com/a-kostevski/exo/internal/utils"
+	"github.com/a-kostevski/exo/pkg/config"
+	"github.com/a-kostevski/exo/pkg/logger"
+	"github.com/a-kostevski/exo/pkg/utils"
 )
 
 // Save saves the note content to disk

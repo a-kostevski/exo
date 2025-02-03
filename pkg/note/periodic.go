@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/a-kostevski/exo/internal/logger"
-	"github.com/a-kostevski/exo/internal/utils"
+	"github.com/a-kostevski/exo/pkg/logger"
+	"github.com/a-kostevski/exo/pkg/utils"
 )
 
 // PeriodType represents the type of periodic note

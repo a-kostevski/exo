@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/a-kostevski/exo/internal/logger"
-	"github.com/a-kostevski/exo/internal/utils"
+	"github.com/a-kostevski/exo/pkg/logger"
+	"github.com/a-kostevski/exo/pkg/utils"
 )
 
 // DailyNavigator implements period navigation for daily notes

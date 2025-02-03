@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/a-kostevski/exo/internal/note"
+	"github.com/a-kostevski/exo/pkg/note"
 )
 
 var dayCmd = &cobra.Command{

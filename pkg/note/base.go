@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/a-kostevski/exo/internal/config"
-	"github.com/a-kostevski/exo/internal/logger"
-	"github.com/a-kostevski/exo/internal/templates"
+	"github.com/a-kostevski/exo/pkg/config"
+	"github.com/a-kostevski/exo/pkg/logger"
+	"github.com/a-kostevski/exo/pkg/templates"
 )
 
 type BaseNote struct {

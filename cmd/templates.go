@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/a-kostevski/exo/internal/config"
-	"github.com/a-kostevski/exo/internal/templates"
+	"github.com/a-kostevski/exo/pkg/config"
+	"github.com/a-kostevski/exo/pkg/templates"
 	"github.com/spf13/cobra"
 )
 

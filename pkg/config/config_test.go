@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/a-kostevski/exo/internal/logger"
-	"github.com/a-kostevski/exo/internal/utils"
+	"github.com/a-kostevski/exo/pkg/logger"
+	"github.com/a-kostevski/exo/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

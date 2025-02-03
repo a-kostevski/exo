@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/a-kostevski/exo/internal/logger"
-	"github.com/a-kostevski/exo/internal/utils"
+	"github.com/a-kostevski/exo/pkg/logger"
+	"github.com/a-kostevski/exo/pkg/utils"
 	"github.com/spf13/viper"
 )
 

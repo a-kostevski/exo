@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/a-kostevski/exo/internal/logger"
+	"github.com/a-kostevski/exo/pkg/logger"
 )
 
 // EnsureDirectoryExists creates directory if it doesn't exist.
