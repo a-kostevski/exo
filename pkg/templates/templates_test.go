@@ -12,52 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Mock logger for testing
-// mockLogger implements Logger interface for testing
-type mockLogger struct {
-	t *testing.T // optional, for test assertions
-}
-
-func newMockLogger(t *testing.T) *mockLogger {
-	return &mockLogger{t: t}
-}
-
-// Basic logging methods
-func (m *mockLogger) Debug(msg string, fields ...logger.Field) {}
-func (m *mockLogger) Info(msg string, fields ...logger.Field)  {}
-func (m *mockLogger) Warn(msg string, fields ...logger.Field)  {}
-func (m *mockLogger) Error(msg string, fields ...logger.Field) {}
-func (m *mockLogger) Fatal(msg string, fields ...logger.Field) {
-	if m.t != nil {
-		m.t.Fatal(msg)
-	}
-}
-
-// Format logging methods
-func (m *mockLogger) Debugf(format string, args ...interface{}) {}
-func (m *mockLogger) Infof(format string, args ...interface{})  {}
-func (m *mockLogger) Warnf(format string, args ...interface{})  {}
-func (m *mockLogger) Errorf(format string, args ...interface{}) {}
-func (m *mockLogger) Fatalf(format string, args ...interface{}) {
-	if m.t != nil {
-		m.t.Fatalf(format, args...)
-	}
-}
-
-// Contextual logging methods
-func (m *mockLogger) With(fields ...logger.Field) logger.Logger {
-	return m
-}
-
-func (m *mockLogger) WithContext(ctx context.Context) logger.Logger {
-	return m
-}
-
 func setupTestConfig(t *testing.T) TemplateConfig {
 	return TemplateConfig{
 		TemplateDir:       t.TempDir(),
 		TemplateExtension: ".md",
-		Logger:            &mockLogger{},
+		Logger:            logger.NewMockLogger(t),
 		FilePermissions:   0644,
 	}
 }
@@ -95,7 +54,7 @@ func TestNewTemplateManager(t *testing.T) {
 		{
 			name: "empty directory",
 			config: TemplateConfig{
-				Logger: newMockLogger(t),
+				Logger: logger.NewMockLogger(t),
 				// TemplateDir is intentionally empty
 			},
 			wantErr: true,
