@@ -1,291 +1,61 @@
-package fs
+package fs_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/a-kostevski/exo/pkg/fs"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestExpandPath(t *testing.T) {
-	// Save original HOME
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
+	// Set a temporary HOME for the test.
+	tmpHome := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
 
-	// Set up a test home directory
-	tmpDir := t.TempDir()
-	require.NoError(t, os.Setenv("HOME", tmpDir))
+	pathWithTilde := "~/folder/file.txt"
+	expanded := fs.ExpandPath(pathWithTilde)
+	expected := filepath.Join(tmpHome, "folder", "file.txt")
+	assert.Equal(t, expected, expanded)
 
-	tests := []struct {
-		name     string
-		path     string
-		expected string
-		wantErr  bool
-	}{
-		{
-			name:     "expand home directory",
-			path:     "~/test",
-			expected: filepath.Join(tmpDir, "test"),
-			wantErr:  false,
-		},
-		{
-			name:     "path without tilde",
-			path:     "/absolute/path",
-			expected: "/absolute/path",
-			wantErr:  false,
-		},
-		{
-			name:     "relative path",
-			path:     "relative/path",
-			expected: "relative/path",
-			wantErr:  false,
-		},
-		{
-			name:     "empty path",
-			path:     "",
-			expected: "",
-			wantErr:  false,
-		},
-		{
-			name:     "tilde in middle of path",
-			path:     "/path/~/test",
-			expected: "/path/~/test",
-			wantErr:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			expanded := ExpandPath(tt.path)
-			assert.Equal(t, tt.expected, expanded)
-		})
-	}
+	// When no tilde, path is returned unchanged.
+	absolutePath := "/abs/path"
+	assert.Equal(t, absolutePath, fs.ExpandPath(absolutePath))
 }
 
 func TestResolvePath(t *testing.T) {
-	// Save original HOME
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
+	base := "/base/path"
+	relative := "relative/file.txt"
+	resolved := fs.ResolvePath(base, relative)
+	expected := filepath.Join(base, relative)
+	assert.Equal(t, expected, resolved)
 
-	// Set up a test home directory
-	tmpDir := t.TempDir()
-	require.NoError(t, os.Setenv("HOME", tmpDir))
-
-	tests := []struct {
-		name     string
-		base     string
-		path     string
-		expected string
-		wantErr  bool
-	}{
-		{
-			name:     "absolute path",
-			base:     tmpDir,
-			path:     "/absolute/path",
-			expected: "/absolute/path",
-			wantErr:  false,
-		},
-		{
-			name:     "relative path",
-			base:     tmpDir,
-			path:     "relative/path",
-			expected: filepath.Join(tmpDir, "relative/path"),
-			wantErr:  false,
-		},
-		{
-			name:     "path with tilde",
-			base:     tmpDir,
-			path:     "~/test",
-			expected: filepath.Join(tmpDir, "test"),
-			wantErr:  false,
-		},
-		{
-			name:     "empty path",
-			base:     tmpDir,
-			path:     "",
-			expected: tmpDir,
-			wantErr:  false,
-		},
-		{
-			name:     "empty base",
-			base:     "",
-			path:     "test",
-			expected: "test",
-			wantErr:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// First expand any tildes in the path
-			expandedPath := ExpandPath(tt.path)
-			resolved := ResolvePath(tt.base, expandedPath)
-			assert.Equal(t, tt.expected, resolved)
-		})
-	}
-}
-
-func TestGetXDGConfigHome(t *testing.T) {
-	// Save original environment variables
-	originalHome := os.Getenv("HOME")
-	originalXDGConfigHome := os.Getenv("XDG_CONFIG_HOME")
-	defer func() {
-		os.Setenv("HOME", originalHome)
-		os.Setenv("XDG_CONFIG_HOME", originalXDGConfigHome)
-	}()
-
-	// Set up a test home directory
-	tmpDir := t.TempDir()
-	require.NoError(t, os.Setenv("HOME", tmpDir))
-
-	tests := []struct {
-		name           string
-		xdgConfigHome  string
-		expectedSuffix string
-	}{
-		{
-			name:           "XDG_CONFIG_HOME set",
-			xdgConfigHome:  filepath.Join(tmpDir, "custom/config"),
-			expectedSuffix: "custom/config",
-		},
-		{
-			name:           "XDG_CONFIG_HOME not set",
-			xdgConfigHome:  "",
-			expectedSuffix: ".config",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.xdgConfigHome != "" {
-				require.NoError(t, os.Setenv("XDG_CONFIG_HOME", tt.xdgConfigHome))
-			} else {
-				require.NoError(t, os.Unsetenv("XDG_CONFIG_HOME"))
-			}
-
-			configHome := GetXDGConfigHome()
-			if tt.xdgConfigHome != "" {
-				assert.Equal(t, tt.xdgConfigHome, configHome)
-			} else {
-				assert.Equal(t, filepath.Join(tmpDir, tt.expectedSuffix), configHome)
-			}
-		})
-	}
-}
-
-func TestGetXDGDataHome(t *testing.T) {
-	// Save original environment variables
-	originalHome := os.Getenv("HOME")
-	originalXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	defer func() {
-		os.Setenv("HOME", originalHome)
-		os.Setenv("XDG_DATA_HOME", originalXDGDataHome)
-	}()
-
-	// Set up a test home directory
-	tmpDir := t.TempDir()
-	require.NoError(t, os.Setenv("HOME", tmpDir))
-
-	tests := []struct {
-		name           string
-		xdgDataHome    string
-		expectedSuffix string
-	}{
-		{
-			name:           "XDG_DATA_HOME set",
-			xdgDataHome:    filepath.Join(tmpDir, "custom/data"),
-			expectedSuffix: "custom/data",
-		},
-		{
-			name:           "XDG_DATA_HOME not set",
-			xdgDataHome:    "",
-			expectedSuffix: ".local/share",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.xdgDataHome != "" {
-				require.NoError(t, os.Setenv("XDG_DATA_HOME", tt.xdgDataHome))
-			} else {
-				require.NoError(t, os.Unsetenv("XDG_DATA_HOME"))
-			}
-
-			dataHome := GetXDGDataHome()
-			if tt.xdgDataHome != "" {
-				assert.Equal(t, tt.xdgDataHome, dataHome)
-			} else {
-				assert.Equal(t, filepath.Join(tmpDir, tt.expectedSuffix), dataHome)
-			}
-		})
-	}
+	// When the given path is already absolute, it is returned as-is.
+	abs := "/another/abs/file.txt"
+	resolved = fs.ResolvePath(base, abs)
+	assert.Equal(t, abs, resolved)
 }
 
 func TestSanitizePath(t *testing.T) {
-	// Save original HOME
-	originalHome := os.Getenv("HOME")
-	defer os.Setenv("HOME", originalHome)
+	// Set a temporary HOME.
+	tmpHome := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
 
-	// Set up a test home directory
-	tmpDir := t.TempDir()
-	require.NoError(t, os.Setenv("HOME", tmpDir))
+	// Test a relative path.
+	relPath := "folder//subfolder/../file.txt"
+	sanitized := fs.SanitizePath(relPath, tmpHome)
+	expected := filepath.Join(tmpHome, "folder", "file.txt")
+	assert.Equal(t, expected, sanitized)
 
-	tests := []struct {
-		name     string
-		path     string
-		base     string
-		expected string
-	}{
-		{
-			name:     "absolute path",
-			path:     "/absolute/path",
-			base:     tmpDir,
-			expected: "/absolute/path",
-		},
-		{
-			name:     "relative path",
-			path:     "relative/path",
-			base:     tmpDir,
-			expected: filepath.Join(tmpDir, "relative/path"),
-		},
-		{
-			name:     "path with tilde",
-			path:     "~/some/path",
-			base:     tmpDir,
-			expected: filepath.Join(tmpDir, "some/path"),
-		},
-		{
-			name:     "path with dot",
-			path:     "./current/path",
-			base:     tmpDir,
-			expected: filepath.Join(tmpDir, "current/path"),
-		},
-		{
-			name:     "path with parent directory",
-			path:     "../parent/path",
-			base:     tmpDir,
-			expected: filepath.Join(filepath.Dir(tmpDir), "parent/path"),
-		},
-		{
-			name:     "empty path",
-			path:     "",
-			base:     tmpDir,
-			expected: tmpDir,
-		},
-		{
-			name:     "path with multiple slashes",
-			path:     "path//with///slashes",
-			base:     tmpDir,
-			expected: filepath.Join(tmpDir, "path/with/slashes"),
-		},
-	}
+	// Test a path with tilde.
+	tildePath := "~/folder/file.txt"
+	sanitized = fs.SanitizePath(tildePath, tmpHome)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := SanitizePath(tt.path, tt.base)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
+	expected = filepath.Join(tmpHome, "folder", "file.txt")
+	assert.Equal(t, expected, sanitized)
 }

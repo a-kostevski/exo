@@ -9,22 +9,80 @@ import (
 	"time"
 )
 
-//go:embed default/*
-var templatesFS embed.FS
+// -------------------------
+// Embedded Default Templates
+// -------------------------
 
+// DefaultTemplatesFS holds the embedded default templates.
+//
+//go:embed default/*
+var DefaultTemplatesFS embed.FS
+
+// DefaultTemplateBaseDir is the base directory for default templates in the embedded FS.
 const (
-	defaultTemplateDir = "default"
-	backupExtension    = ".bak"
-	defaultPerms       = 0644 // for files
-	defaultDirPerms    = 0755 // for directories
+	DefaultTemplateBaseDir = "default"
+	BackupExtension        = ".bak"
+	defaultDirPerms        = 0755 // Owner can read/write/execute, others can read/execute
 )
 
-// InputReader defines an interface for reading user input
+// -------------------------
+// Default Template Store (for Installation)
+// -------------------------
+
+// DefaultTemplateStore defines an interface to obtain built-in default templates.
+type DefaultTemplateStore interface {
+	// ReadTemplate returns the content of the template identified by name.
+	ReadTemplate(name string) ([]byte, error)
+	// ListTemplates returns a list of template filenames (with extension) in the default store.
+	ListTemplates() ([]string, error)
+}
+
+type embedTemplateStore struct {
+	efs     embed.FS
+	baseDir string
+}
+
+// NewEmbedTemplateStore creates a new DefaultTemplateStore using an embed.FS and a base directory.
+func NewEmbedTemplateStore(efs embed.FS, baseDir string) DefaultTemplateStore {
+	return &embedTemplateStore{efs: efs, baseDir: baseDir}
+}
+
+func (e *embedTemplateStore) ReadTemplate(name string) ([]byte, error) {
+	path := filepath.Join(e.baseDir, name)
+	return e.efs.ReadFile(path)
+}
+
+func (e *embedTemplateStore) ListTemplates() ([]string, error) {
+	entries, err := e.efs.ReadDir(e.baseDir)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			names = append(names, entry.Name())
+		}
+	}
+	return names, nil
+}
+
+// -------------------------
+// Installation API
+// -------------------------
+
+// InstallOptions holds configuration for installing default templates.
+type InstallOptions struct {
+	TargetDir string      // Directory where default templates will be installed.
+	Force     bool        // If true, always overwrite.
+	Reader    InputReader // Used to prompt user if necessary.
+}
+
+// InputReader defines an interface for reading interactive input.
 type InputReader interface {
 	ReadResponse() (string, error)
 }
 
-// DefaultInputReader implements InputReader using standard input
+// DefaultInputReader implements InputReader using standard input.
 type DefaultInputReader struct{}
 
 func (r *DefaultInputReader) ReadResponse() (string, error) {
@@ -33,210 +91,65 @@ func (r *DefaultInputReader) ReadResponse() (string, error) {
 	return response, err
 }
 
-// InstallOptions holds configuration for template installation
-type InstallOptions struct {
-	TemplateDir string
-	Force       bool
-	Reader      InputReader
-}
-
-// InstallDefault installs default templates to the specified directory
-func InstallDefault(path string, force bool) error {
-	return InstallDefaultWithOptions(InstallOptions{
-		TemplateDir: path,
-		Force:       force,
-		Reader:      &DefaultInputReader{},
-	})
-}
-
-// InstallDefaultWithOptions installs default templates with custom options
-func InstallDefaultWithOptions(opts InstallOptions) error {
-	if err := validateTemplatePath(opts.TemplateDir); err != nil {
-		return err
+// InstallDefaultTemplates installs built-in templates from the default template store
+// into the target directory (usually the custom TemplateDir).
+func InstallDefaultTemplates(cfg TemplateConfig, opts InstallOptions, defaultStore DefaultTemplateStore) error {
+	if strings.TrimSpace(opts.TargetDir) == "" {
+		return fmt.Errorf("target directory cannot be empty")
 	}
-
-	// Ensure template directory exists
-	if err := os.MkdirAll(opts.TemplateDir, defaultDirPerms); err != nil {
-		return fmt.Errorf("failed to create template directory: %w", err)
+	// Ensure target directory exists.
+	if err := os.MkdirAll(opts.TargetDir, defaultDirPerms); err != nil {
+		return fmt.Errorf("failed to create target directory: %w", err)
 	}
-
-	entries, err := templatesFS.ReadDir(defaultTemplateDir)
+	if defaultStore == nil {
+		return fmt.Errorf("default templates source is not configured")
+	}
+	templateFiles, err := defaultStore.ListTemplates()
 	if err != nil {
-		return fmt.Errorf("failed to read default templates directory: %w", err)
+		return fmt.Errorf("failed to list default templates: %w", err)
 	}
-
-	templateNames := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			templateNames = append(templateNames, entry.Name())
+	for _, file := range templateFiles {
+		content, err := defaultStore.ReadTemplate(file)
+		if err != nil {
+			return fmt.Errorf("failed to read default template %s: %w", file, err)
 		}
-	}
-
-	// First check which files already exist
-	existingFiles, err := findExistingFiles(opts.TemplateDir, entries)
-	if err != nil {
-		return fmt.Errorf("failed to check for existing files: %w", err)
-	}
-
-	if len(existingFiles) > 0 {
-		if !opts.Force {
-			action, err := promptForAction(opts.Reader)
-			if err != nil {
-				return fmt.Errorf("failed to get user action: %w", err)
-			}
-			opts.Force = action == "overwrite"
-		} else {
-		}
-	}
-
-	return processTemplateInstallation(opts, entries)
-}
-
-func findExistingFiles(path string, entries []os.DirEntry) ([]string, error) {
-	var existingFiles []string
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		destPath := filepath.Join(path, entry.Name())
+		destPath := filepath.Join(opts.TargetDir, file)
+		// If file exists and not forced, prompt the user.
 		if _, err := os.Stat(destPath); err == nil {
-			existingFiles = append(existingFiles, entry.Name())
-		} else if !os.IsNotExist(err) {
-			return nil, fmt.Errorf("error checking file %s: %w", destPath, err)
-		} else {
-		}
-	}
-
-	return existingFiles, nil
-}
-
-func promptForAction(reader InputReader) (string, error) {
-	fmt.Print("Found existing template files. Choose action \n [S]kip all\n[O]verwrite all\n[C]hoose per file\n")
-	response, err := reader.ReadResponse()
-	if err != nil {
-		return "", fmt.Errorf("failed to read user response: %w", err)
-	}
-
-	response = strings.ToLower(strings.TrimSpace(response))
-	switch response {
-	case "s":
-		return "skip", nil
-	case "o":
-		return "overwrite", nil
-	case "c":
-		return "choose", nil
-	default:
-		err := fmt.Errorf("invalid option '%s', expected one of: s, o, c", response)
-		return "", err
-	}
-}
-
-func processTemplateInstallation(opts InstallOptions, entries []os.DirEntry) error {
-	stats := struct {
-		installed int
-		skipped   int
-		failed    int
-	}{}
-
-	// Create a channel for errors
-	errChan := make(chan error, len(entries))
-	defer close(errChan)
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		if err := func() error {
-			// Create a recovery function
-			defer func() {
-				if r := recover(); r != nil {
-					errChan <- fmt.Errorf("panic while installing template %s: %v", entry.Name(), r)
+			if !opts.Force {
+				if opts.Reader == nil {
+					return fmt.Errorf("file %s exists; set Force to true to overwrite", file)
 				}
-			}()
-
-			if err := installTemplate(opts, entry); err != nil {
-				stats.failed++
-				return fmt.Errorf("failed to install template %s: %w", entry.Name(), err)
+				fmt.Printf("File %s exists. Overwrite? [y/n]: ", file)
+				resp, err := opts.Reader.ReadResponse()
+				if err != nil {
+					return fmt.Errorf("failed to read user response: %w", err)
+				}
+				if strings.ToLower(strings.TrimSpace(resp)) != "y" {
+					// Skip installation for this file.
+					continue
+				}
 			}
-			stats.installed++
-			return nil
-		}(); err != nil {
-			errChan <- err
-		}
-	}
-
-	// Check for any errors
-	select {
-	case err := <-errChan:
-		return err
-	default:
-	}
-
-	return nil
-}
-
-func installTemplate(opts InstallOptions, entry os.DirEntry) error {
-	content, err := templatesFS.ReadFile(filepath.Join(defaultTemplateDir, entry.Name()))
-	if err != nil {
-		return fmt.Errorf("failed to read template file %s: %w", entry.Name(), err)
-	}
-
-	destPath := filepath.Join(opts.TemplateDir, entry.Name())
-
-	// Check if file exists
-	if _, err := os.Stat(destPath); err == nil {
-		if !opts.Force {
-			overwrite, err := promptForFile(opts.Reader, entry.Name())
-			if err != nil {
-				return fmt.Errorf("failed to get user input: %w", err)
-			}
-			if !overwrite {
-				return nil
+			// Create backup.
+			if err := CreateBackup(destPath); err != nil {
+				return fmt.Errorf("failed to create backup for %s: %w", destPath, err)
 			}
 		}
-
-		// Create backup before overwriting
-		if err := createBackup(destPath); err != nil {
-			return fmt.Errorf("failed to create backup for %s: %w", destPath, err)
+		// Write the file.
+		if err := os.WriteFile(destPath, content, cfg.FilePermissions); err != nil {
+			return fmt.Errorf("failed to write template %s: %w", file, err)
 		}
-	}
-
-	// Ensure parent directory exists
-	if err := os.MkdirAll(filepath.Dir(destPath), defaultDirPerms); err != nil {
-		return fmt.Errorf("failed to create parent directory for %s: %w", destPath, err)
-	}
-
-	if err := os.WriteFile(destPath, content, defaultPerms); err != nil {
-		return fmt.Errorf("failed to write template %s: %w", entry.Name(), err)
 	}
 	return nil
 }
 
-func promptForFile(reader InputReader, file string) (bool, error) {
-	fmt.Printf("Overwrite %s? [y/n]: ", file)
-	response, err := reader.ReadResponse()
-	if err != nil {
-		return false, fmt.Errorf("failed to read user response for %s: %w", file, err)
-	}
-	result := response == "y" || response == "Y"
-	return result, nil
-}
-
-func createBackup(path string) error {
-	// First, check if backup already exists
-	backupPath := path + backupExtension
+// CreateBackup renames the existing file by appending backupExtension.
+// If a backup already exists, it appends a timestamp.
+func CreateBackup(path string) error {
+	backupPath := path + BackupExtension
 	if _, err := os.Stat(backupPath); err == nil {
-		// Backup exists, append timestamp
 		timestamp := time.Now().Format("20060102150405")
-		backupPath = fmt.Sprintf("%s.%s%s", path, timestamp, backupExtension)
+		backupPath = fmt.Sprintf("%s.%s%s", path, timestamp, BackupExtension)
 	}
-
-	if err := os.Rename(path, backupPath); err != nil {
-		return fmt.Errorf("failed to create backup %s: %w", backupPath, err)
-	}
-
-	return nil
+	return os.Rename(path, backupPath)
 }

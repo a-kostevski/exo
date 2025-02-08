@@ -4,96 +4,71 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/a-kostevski/exo/pkg/config"
-	"github.com/a-kostevski/exo/pkg/logger"
 	"github.com/spf13/cobra"
+
+	"github.com/a-kostevski/exo/pkg/config"
 )
 
-var configCmd = &cobra.Command{
-	Use:   "config",
-	Short: "Manage configuration",
-	Long: `Manage exo configuration settings.
-	
+// NewConfigCmd creates a new "config" command with subcommands "get" and "set".
+func NewConfigCmd(deps Dependencies) *cobra.Command {
+	configCmd := &cobra.Command{
+		Use:   "config",
+		Short: "Manage configuration",
+		Long: `Manage exo configuration settings.
+
 Without arguments, lists all configuration settings.
-Use 'get' to retrieve a specific setting.
-Use 'set' to modify a specific setting.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		listConfig()
-	},
-}
-
-var configGetCmd = &cobra.Command{
-	Use:   "get [key]",
-	Short: "Get a configuration value",
-	Long:  "Get the value of a specific configuration key",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		getConfig(args[0])
-	},
-}
-
-var configSetCmd = &cobra.Command{
-	Use:   "set [key] [value]",
-	Short: "Set a configuration value",
-	Long:  "Set the value of a specific configuration key",
-	Args:  cobra.ExactArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
-		setConfig(args[0], args[1])
-	},
-}
-
-func init() {
-	rootCmd.AddCommand(configCmd)
-	configCmd.AddCommand(configGetCmd)
-	configCmd.AddCommand(configSetCmd)
-}
-
-func listConfig() {
-	cfg, err := config.Get()
-	if err != nil {
-		logger.Errorf("Failed to get configuration: %v", err)
-		return
+Use "get" to retrieve a specific setting.
+Use "set" to modify a specific setting.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			// Simply print the configuration.
+			fmt.Println(deps.Config)
+		},
 	}
-
-	fmt.Println(cfg)
+	configCmd.AddCommand(NewConfigGetCmd(deps))
+	configCmd.AddCommand(NewConfigSetCmd(deps))
+	return configCmd
 }
 
-func getConfig(key string) {
-	cfg, err := config.Get()
-	if err != nil {
-		logger.Errorf("Failed to get configuration: %v", err)
-		return
+func NewConfigGetCmd(deps Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "get [key]",
+		Short: "Get a configuration value",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			key := args[0]
+			value := getConfigValue(deps.Config, key)
+			if value == "" {
+				deps.Logger.Errorf("Invalid configuration key: %s", key)
+				return
+			}
+			fmt.Printf("%s: %s\n", key, value)
+		},
 	}
-
-	value := getConfigValue(cfg, key)
-	if value == "" {
-		logger.Errorf("Invalid configuration key: %s", key)
-		return
-	}
-
-	fmt.Printf("%s: %s\n", key, value)
 }
 
-func setConfig(key, value string) {
-	cfg, err := config.Get()
-	if err != nil {
-		logger.Errorf("Failed to get configuration: %v", err)
-		return
+func NewConfigSetCmd(deps Dependencies) *cobra.Command {
+	return &cobra.Command{
+		Use:   "set [key] [value]",
+		Short: "Set a configuration value",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			key := args[0]
+			value := args[1]
+			if !setConfigValue(deps.Config, key, value) {
+				deps.Logger.Errorf("Invalid configuration key: %s", key)
+				return
+			}
+			if err := deps.Config.Save(); err != nil {
+				deps.Logger.Errorf("Failed to save configuration: %v", err)
+				return
+			}
+			deps.Logger.Info("Configuration updated successfully")
+			fmt.Printf("Set %s to %s\n", key, value)
+		},
 	}
-
-	if !setConfigValue(cfg, key, value) {
-		logger.Errorf("Invalid configuration key: %s", key)
-		return
-	}
-
-	if err := cfg.Save(); err != nil {
-		logger.Errorf("Failed to save configuration: %v", err)
-		return
-	}
-	logger.Info("Configuration updated successfully")
-	fmt.Printf("Set %s to %s\n", key, value)
 }
 
+// getConfigValue returns the configuration value for a given key.
 func getConfigValue(cfg *config.Config, key string) string {
 	key = strings.ToLower(key)
 	switch key {
@@ -108,16 +83,17 @@ func getConfigValue(cfg *config.Config, key string) string {
 	case "zettel_dir", "zetteldir":
 		return cfg.Dir.ZettelDir
 	case "log.level", "loglevel":
-		return string(cfg.Log.Level)
+		return cfg.Log.Level
 	case "log.format", "logformat":
-		return string(cfg.Log.Format)
+		return cfg.Log.Format
 	case "log.output", "logoutput":
-		return string(cfg.Log.Output)
+		return cfg.Log.Output
 	default:
 		return ""
 	}
 }
 
+// setConfigValue updates the configuration for a given key.
 func setConfigValue(cfg *config.Config, key, value string) bool {
 	key = strings.ToLower(key)
 	switch key {
@@ -132,11 +108,11 @@ func setConfigValue(cfg *config.Config, key, value string) bool {
 	case "zettel_dir", "zetteldir":
 		cfg.Dir.ZettelDir = value
 	case "log.level", "loglevel":
-		cfg.Log.Level = logger.Level(value)
+		cfg.Log.Level = value
 	case "log.format", "logformat":
-		cfg.Log.Format = logger.Format(value)
+		cfg.Log.Format = value
 	case "log.output", "logoutput":
-		cfg.Log.Output = logger.OutputType(value)
+		cfg.Log.Output = value
 	default:
 		return false
 	}

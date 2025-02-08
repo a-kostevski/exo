@@ -6,19 +6,19 @@ import (
 	"strings"
 )
 
-// ExpandPath expands the tilde in paths to the user's home directory
+// ExpandPath expands a leading tilde (~) in the provided path to the user's home directory.
 func ExpandPath(path string) string {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return path
+			return path // fallback to the original path if home cannot be determined
 		}
 		return filepath.Join(home, path[2:])
 	}
 	return path
 }
 
-// ResolvePath resolves a path relative to a base directory
+// ResolvePath returns an absolute path by joining base with path if path is not absolute.
 func ResolvePath(base, path string) string {
 	if filepath.IsAbs(path) {
 		return path
@@ -26,10 +26,10 @@ func ResolvePath(base, path string) string {
 	return filepath.Join(base, path)
 }
 
-// GetXDGConfigHome returns the XDG config home directory
+// GetXDGConfigHome returns the XDG_CONFIG_HOME directory, or defaults to $HOME/.config.
 func GetXDGConfigHome() string {
-	if xdgConfig := os.Getenv("XDG_CONFIG_HOME"); xdgConfig != "" {
-		return xdgConfig
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return xdg
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -38,10 +38,10 @@ func GetXDGConfigHome() string {
 	return filepath.Join(home, ".config")
 }
 
-// GetXDGDataHome returns the XDG data home directory
+// GetXDGDataHome returns the XDG_DATA_HOME directory, or defaults to $HOME/.local/share.
 func GetXDGDataHome() string {
-	if xdgData := os.Getenv("XDG_DATA_HOME"); xdgData != "" {
-		return xdgData
+	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+		return xdg
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -50,10 +50,10 @@ func GetXDGDataHome() string {
 	return filepath.Join(home, ".local", "share")
 }
 
-// GetXDGCacheHome returns the XDG cache home directory
+// GetXDGCacheHome returns the XDG_CACHE_HOME directory, or defaults to $HOME/.cache.
 func GetXDGCacheHome() string {
-	if xdgCache := os.Getenv("XDG_CACHE_HOME"); xdgCache != "" {
-		return xdgCache
+	if xdg := os.Getenv("XDG_CACHE_HOME"); xdg != "" {
+		return xdg
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -62,13 +62,13 @@ func GetXDGCacheHome() string {
 	return filepath.Join(home, ".cache")
 }
 
-// SanitizePath cleans and normalizes the provided path, expanding any relative paths
-// against the provided base directory (usually home directory)
-func SanitizePath(path, base string) string {
+// SanitizePath cleans the provided path after expanding any tilde. If the result is not absolute,
+// it is joined with the provided home directory.
+func SanitizePath(path, home string) string {
 	expanded := ExpandPath(path)
 	cleaned := filepath.Clean(expanded)
 	if !filepath.IsAbs(cleaned) {
-		cleaned = filepath.Join(base, cleaned)
+		cleaned = filepath.Join(home, cleaned)
 	}
 	return cleaned
 }
