@@ -15,6 +15,7 @@ This document outlines the planned development roadmap for Exo - Personal Knowle
 ## Phase 1: Enhanced Note Types (v0.2.0)
 
 ### Ideas Module
+
 - `exo idea` command for quick idea capture
 - Automatic categorization and tagging
 - Integration with daily notes
@@ -22,6 +23,7 @@ This document outlines the planned development roadmap for Exo - Personal Knowle
 - Idea status tracking (new, in-progress, implemented, archived)
 
 ### Project Management
+
 - `exo project` command for project creation and tracking
 - Project templates with:
   - README.md
@@ -36,12 +38,14 @@ This document outlines the planned development roadmap for Exo - Personal Knowle
 ## Phase 2: Extended Time Periods (v0.3.0)
 
 ### New Time Period Notes
+
 - `exo week` - Weekly planning and review
 - `exo month` - Monthly goals and retrospectives
 - `exo quarter` - Quarterly objectives and key results
 - `exo year` - Annual planning and review
 
 ### Features
+
 - Hierarchical linking between time periods
 - Automatic aggregation of metrics
 - Progress tracking across time periods
@@ -51,6 +55,7 @@ This document outlines the planned development roadmap for Exo - Personal Knowle
 ## Phase 3: Task Management (v0.4.0)
 
 ### Todo System
+
 - `exo todo` command suite
 - Features:
   - Task creation with priorities
@@ -67,6 +72,7 @@ This document outlines the planned development roadmap for Exo - Personal Knowle
 ## Phase 4: Reference Management (v0.5.0)
 
 ### Reference System
+
 - `exo ref` command for managing references
 - Features:
   - Multiple reference types (articles, books, papers, websites)
@@ -82,6 +88,7 @@ This document outlines the planned development roadmap for Exo - Personal Knowle
 ## Phase 5: Metrics and Analytics (v0.6.0)
 
 ### Data Collection and Analysis
+
 - Automated metrics collection from:
   - Daily notes
   - Weekly summaries
@@ -96,6 +103,7 @@ This document outlines the planned development roadmap for Exo - Personal Knowle
   - Custom metrics
 
 ### Analytics Features
+
 - Trend analysis
 - Progress visualization
 - Goal tracking
@@ -108,6 +116,7 @@ This document outlines the planned development roadmap for Exo - Personal Knowle
 ## Technical Improvements
 
 ### Infrastructure
+
 - Database integration for metrics
 - Search engine implementation
 - API for external tool integration
@@ -115,6 +124,7 @@ This document outlines the planned development roadmap for Exo - Personal Knowle
 - Mobile companion app
 
 ### User Experience
+
 - Interactive CLI with TUI
 - Customizable templates
 - Extended configuration options
@@ -123,6 +133,7 @@ This document outlines the planned development roadmap for Exo - Personal Knowle
 - Offline support
 
 ### Integration
+
 - Calendar integration
 - Task manager sync
 - Git integration
@@ -140,3 +151,4 @@ This roadmap is a living document and may be updated based on user feedback, tec
 ---
 
 Last updated: 2024-01-16
+
